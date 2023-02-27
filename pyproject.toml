@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "sqla-fancy-core"
+version = "0.1.0"
+description = "SQLAlchemy core, but fancier"
+authors = ["Arijit Basu <sayanarijit@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+sqlalchemy = "^2"
+
+[tool.poetry.dev-dependencies]
+pytest = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
