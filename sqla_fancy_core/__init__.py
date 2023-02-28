@@ -6,22 +6,11 @@ import sqlalchemy as sa
 class TableFactory:
     """A factory for creating SQLAlchemy columns with default values."""
 
-    DEFAULTS = {}
-    FK_DEFAULTS = {}
-
-    def __init__(self, defaults: dict | None = None, fk_defaults: dict | None = None):
-        """Initialize the factory with default values.
-
-        Args:
-            defaults (dict, optional): Instance scoped defaults for columns.
-            fk_defaults (dict, optional): Instance scoped defaults for foreign keys.
-        """
+    def __init__(self):
+        """Initialize the factory with default values."""
         self.c = []
-        self.defaults = dict(self.DEFAULTS, **(defaults or {}))
-        self.fk_defaults = dict(self.FK_DEFAULTS, **(fk_defaults or {}))
 
     def col(self, *args, **kwargs) -> sa.Column:
-        kwargs = dict(self.defaults, **kwargs)
         col = sa.Column(*args, **kwargs)
         self.c.append(col)
         return col
@@ -77,9 +66,8 @@ class TableFactory:
     def false(self, name: str, *args, **kwargs):
         return self.boolean(name, default=False, *args, **kwargs)
 
-    def fk(self, name: str, ref: str | sa.Column, *args, **kwargs):
-        fk = sa.ForeignKey(ref, **self.fk_defaults)
-        return self.col(name, fk, *args, **kwargs)
+    def foreign_key(self, name: str, ref: str | sa.Column, *args, **kwargs):
+        return self.col(name, sa.ForeignKey(ref), *args, **kwargs)
 
     def enum(self, name: str, enum: type, *args, **kwargs) -> sa.Column:
         return self.col(name, sa.Enum(enum), *args, **kwargs)
@@ -144,6 +132,3 @@ class TableFactory:
 
     def __call__(self, name, metadata, *args, **kwargs):
         return sa.Table(name, metadata, *args, *self.c, **kwargs)
-
-    column = col
-    foreign_key = fk

@@ -5,10 +5,6 @@ def test_table_factory():
 
     metadata = sa.MetaData()
 
-    # Set the global default values for all columns
-    TableFactory.DEFAULTS = dict(nullable=False)
-    TableFactory.FK_DEFAULTS = dict(ondelete="CASCADE")
-
     # Define a table
     class Author:
         _tf = TableFactory()
@@ -23,7 +19,7 @@ def test_table_factory():
     # Define a table
     class Book:
 
-        _tf = TableFactory(defaults=dict(onupdate="CASCADE"))
+        _tf = TableFactory()
 
         id = _tf.auto_id()
         title = _tf.string("title")
@@ -38,7 +34,6 @@ def test_table_factory():
     metadata.create_all(engine)
 
     with engine.connect() as conn:
-
         # Insert author
         qry = (
             sa.insert(Author.Table)
@@ -47,7 +42,6 @@ def test_table_factory():
         )
         author = next(conn.execute(qry))
         (author_id,) = author
-
         assert author_id == 1
 
         # Insert book
@@ -61,7 +55,7 @@ def test_table_factory():
         assert book_id == 1
 
         # Query the data
-        qry = sa.select(Author.name, Book.title,).join(
+        qry = sa.select(Author.name, Book.title).join(
             Book.Table,
             Book.author_id == Author.id,
         )

@@ -9,11 +9,7 @@ from sqla_fancy_core import TableFactory
 
 metadata = sa.MetaData()
 
-# Set the global default values for all columns
-TableFactory.DEFAULTS = dict(nullable=False)
-TableFactory.FK_DEFAULTS = dict(ondelete="CASCADE")
-
-# Define author table
+# Define a table
 class Author:
     _tf = TableFactory()
 
@@ -24,9 +20,10 @@ class Author:
 
     Table = _tf("author", metadata)
 
-# Define book table
+# Define a table
 class Book:
-    _tf = TableFactory(defaults=dict(onupdate="CASCADE"))
+
+    _tf = TableFactory()
 
     id = _tf.auto_id()
     title = _tf.string("title")
@@ -41,7 +38,6 @@ engine = sa.create_engine("sqlite:///:memory:")
 metadata.create_all(engine)
 
 with engine.connect() as conn:
-
     # Insert author
     qry = (
         sa.insert(Author.Table)
@@ -50,7 +46,6 @@ with engine.connect() as conn:
     )
     author = next(conn.execute(qry))
     (author_id,) = author
-
     assert author_id == 1
 
     # Insert book
@@ -64,7 +59,7 @@ with engine.connect() as conn:
     assert book_id == 1
 
     # Query the data
-    qry = sa.select(Author.name, Book.title,).join(
+    qry = sa.select(Author.name, Book.title).join(
         Book.Table,
         Book.author_id == Author.id,
     )
