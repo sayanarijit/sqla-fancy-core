@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-sqlalchemy = "^2"
+sqlalchemy = "*"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
