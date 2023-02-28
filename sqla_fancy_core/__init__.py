@@ -77,7 +77,7 @@ class TableFactory:
     def false(self, name: str, *args, **kwargs):
         return self.boolean(name, default=False, *args, **kwargs)
 
-    def foreign_key(self, name: str, ref: str | sa.Column, *args, **kwargs):
+    def fk(self, name: str, ref: str | sa.Column, *args, **kwargs):
         fk = sa.ForeignKey(ref, **self.fk_defaults)
         return self.col(name, fk, *args, **kwargs)
 
@@ -144,3 +144,6 @@ class TableFactory:
 
     def __call__(self, name, metadata, *args, **kwargs):
         return sa.Table(name, metadata, *args, *self.c, **kwargs)
+
+    column = col
+    foreign_key = fk

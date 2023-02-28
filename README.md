@@ -13,7 +13,7 @@ metadata = sa.MetaData()
 TableFactory.DEFAULTS = dict(nullable=False)
 TableFactory.FK_DEFAULTS = dict(ondelete="CASCADE")
 
-# Define a table
+# Define author table
 class Author:
     _tf = TableFactory()
 
@@ -24,9 +24,8 @@ class Author:
 
     Table = _tf("author", metadata)
 
-# Define a table
+# Define book table
 class Book:
-
     _tf = TableFactory(defaults=dict(onupdate="CASCADE"))
 
     id = _tf.auto_id()
