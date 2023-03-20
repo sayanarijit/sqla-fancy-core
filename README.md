@@ -8,30 +8,28 @@ import sqlalchemy as sa
 from sqla_fancy_core import TableFactory
 
 metadata = sa.MetaData()
+tf = TableFactory()
 
 # Define a table
 class Author:
-    _tf = TableFactory()
 
-    id = _tf.auto_id()
-    name = _tf.string("name")
-    created_at = _tf.created_at()
-    updated_at = _tf.updated_at()
+    id = tf.auto_id()
+    name = tf.string("name")
+    created_at = tf.created_at()
+    updated_at = tf.updated_at()
 
-    Table = _tf("author", metadata)
+    Table = tf("author", metadata)
 
 # Define a table
 class Book:
 
-    _tf = TableFactory()
+    id = tf.auto_id()
+    title = tf.string("title")
+    author_id = tf.foreign_key("author_id", Author.id)
+    created_at = tf.created_at()
+    updated_at = tf.updated_at()
 
-    id = _tf.auto_id()
-    title = _tf.string("title")
-    author_id = _tf.foreign_key("author_id", Author.id)
-    created_at = _tf.created_at()
-    updated_at = _tf.updated_at()
-
-    Table = _tf("book", metadata)
+    Table = tf("book", metadata)
 
 # Create the tables
 engine = sa.create_engine("sqlite:///:memory:")

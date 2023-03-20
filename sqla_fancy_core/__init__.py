@@ -131,4 +131,6 @@ class TableFactory:
         return self.datetime(name, default=sa.func.now(), *args, **kwargs)
 
     def __call__(self, name, metadata, *args, **kwargs):
-        return sa.Table(name, metadata, *args, *self.c, **kwargs)
+        cols = self.c
+        self.c = []
+        return sa.Table(name, metadata, *args, *cols, **kwargs)
