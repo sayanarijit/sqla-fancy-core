@@ -4,6 +4,9 @@ version = "0.2.0"
 description = "SQLAlchemy core, but fancier"
 authors = ["Arijit Basu <sayanarijit@gmail.com>"]
 readme = "README.md"
+license = "MIT"
+keywords = ["sql", "sqlalchemy", "sqlalchemy-core"]
+packages = [{ include = "sqla_fancy_core" }]
 
 [tool.poetry.dependencies]
 python = "^3.7"
