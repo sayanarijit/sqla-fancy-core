@@ -1,6 +1,6 @@
 """SQLAlchemy core, but fancier."""
 
-from typing import Optional
+from typing import Optional, Union
 
 import sqlalchemy as sa
 
@@ -71,7 +71,7 @@ class TableFactory:
     def false(self, name: str, *args, **kwargs):
         return self.boolean(name, default=False, *args, **kwargs)
 
-    def foreign_key(self, name: str, ref: str | sa.Column, *args, **kwargs):
+    def foreign_key(self, name: str, ref: Union[str, sa.Column], *args, **kwargs):
         return self.col(name, sa.ForeignKey(ref), *args, **kwargs)
 
     def enum(self, name: str, enum: type, *args, **kwargs) -> sa.Column:
