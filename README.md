@@ -7,7 +7,6 @@ import sqlalchemy as sa
 
 from sqla_fancy_core import TableFactory
 
-metadata = sa.MetaData()
 tf = TableFactory()
 
 # Define a table
@@ -18,7 +17,7 @@ class Author:
     created_at = tf.created_at()
     updated_at = tf.updated_at()
 
-    Table = tf("author", metadata)
+    Table = tf("author")
 
 # Define a table
 class Book:
@@ -29,11 +28,11 @@ class Book:
     created_at = tf.created_at()
     updated_at = tf.updated_at()
 
-    Table = tf("book", metadata)
+    Table = tf("book")
 
 # Create the tables
 engine = sa.create_engine("sqlite:///:memory:")
-metadata.create_all(engine)
+tf.metadata.create_all(engine)
 
 with engine.connect() as conn:
     # Insert author
@@ -43,7 +42,7 @@ with engine.connect() as conn:
         .returning(Author.id)
     )
     author = next(conn.execute(qry))
-    (author_id,) = author
+    author_id = author._mapping[Author.id]
     assert author_id == 1
 
     # Insert book
@@ -53,8 +52,7 @@ with engine.connect() as conn:
         .returning(Book.id)
     )
     book = next(conn.execute(qry))
-    (book_id,) = book
-    assert book_id == 1
+    assert book._mapping[Book.id] == 1
 
     # Query the data
     qry = sa.select(Author.name, Book.title).join(

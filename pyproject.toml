@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sqla-fancy-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "SQLAlchemy core, but fancier"
 authors = ["Arijit Basu <sayanarijit@gmail.com>"]
 readme = "README.md"

@@ -1,13 +1,18 @@
 """SQLAlchemy core, but fancier."""
 
+from typing import Optional
+
 import sqlalchemy as sa
 
 
 class TableFactory:
     """A factory for creating SQLAlchemy columns with default values."""
 
-    def __init__(self):
+    def __init__(self, metadata: Optional[sa.MetaData] = None):
         """Initialize the factory with default values."""
+        if metadata is None:
+            metadata = sa.MetaData()
+        self.metadata = metadata
         self.c = []
 
     def col(self, *args, **kwargs) -> sa.Column:
@@ -130,7 +135,7 @@ class TableFactory:
     def created_at(self, name="created_at", *args, **kwargs) -> sa.Column:
         return self.datetime(name, default=sa.func.now(), *args, **kwargs)
 
-    def __call__(self, name, metadata, *args, **kwargs):
+    def __call__(self, name, *args, **kwargs):
         cols = self.c
         self.c = []
-        return sa.Table(name, metadata, *args, *cols, **kwargs)
+        return sa.Table(name, self.metadata, *args, *cols, **kwargs)
