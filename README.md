@@ -41,8 +41,8 @@ with engine.connect() as conn:
         .values({Author.name: "John Doe"})
         .returning(Author.id)
     )
-    author = next(conn.execute(qry))
-    author_id = author._mapping[Author.id]
+    author = next(conn.execute(qry).mappings())
+    author_id = author[Author.id]
     assert author_id == 1
 
     # Insert book
@@ -51,8 +51,8 @@ with engine.connect() as conn:
         .values({Book.title: "My Book", Book.author_id: author_id})
         .returning(Book.id)
     )
-    book = next(conn.execute(qry))
-    assert book._mapping[Book.id] == 1
+    book = next(conn.execute(qry).mappings())
+    assert book[Book.id] == 1
 
     # Query the data
     qry = sa.select(Author.name, Book.title).join(
