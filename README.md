@@ -2,6 +2,8 @@
 
 SQLAlchemy core, but fancier.
 
+### Basic Usage
+
 ```python
 import sqlalchemy as sa
 
@@ -61,4 +63,28 @@ with engine.connect() as conn:
     )
     result = conn.execute(qry).fetchall()
     assert result == [("John Doe", "My Book")], result
+```
+
+### With Pydantic Validation
+
+```python
+
+from pydantic import BaseModel, Field
+
+from sqla_fancy_core import TableFactory
+
+tf = TableFactory()
+
+# Define a table
+class User:
+    name = tf.string("name", info={"field": Field(..., max_length=5)})
+    Table = tf("author")
+
+# Define a pydantic schema
+class CreateUser(BaseModel):
+    name: str = User.name.info["field"]
+
+assert CreateUser(name="John").model_dump() == {"name": "John"}
+with pytest.raises(ValueError):
+    CreateUser(name="John Doe")
 ```

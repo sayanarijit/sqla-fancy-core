@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_table_factory():
     import sqlalchemy as sa
 
@@ -55,3 +58,24 @@ def test_table_factory():
         )
         result = conn.execute(qry).fetchall()
         assert result == [("John Doe", "My Book")], result
+
+
+def test_field():
+    from pydantic import BaseModel, Field
+
+    from sqla_fancy_core import TableFactory
+
+    tf = TableFactory()
+
+    # Define a table
+    class User:
+        name = tf.string("name", info={"field": Field(..., max_length=5)})
+        Table = tf("author")
+
+    # Define a pydantic schema
+    class CreateUser(BaseModel):
+        name: str = User.name.info["field"]
+
+    assert CreateUser(name="John").model_dump() == {"name": "John"}
+    with pytest.raises(ValueError):
+        CreateUser(name="John Doe")
