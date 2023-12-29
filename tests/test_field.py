@@ -8,23 +8,22 @@ def test_field():
 
     tf = TableFactory()
 
-    def field(col, default=...):
-        return col.info["field"](default)
-
     # Define a table
     class User:
-        name = tf.string(
-            "name", info={"field": lambda default: Field(default, max_length=5)}
-        )
+        name = tf.string("name")
         Table = tf("author")
+
+        @staticmethod
+        def name_field(default=...):
+            return Field(default, max_length=5)
 
     # Define a pydantic schema
     class CreateUser(BaseModel):
-        name: str = field(User.name)
+        name: str = User.name_field()
 
     # Define a pydantic schema
     class UpdateUser(BaseModel):
-        name: str | None = field(User.name, None)
+        name: str | None = User.name_field(None)
 
     assert CreateUser(name="John").model_dump() == {"name": "John"}
     assert UpdateUser(name="John").model_dump() == {"name": "John"}
