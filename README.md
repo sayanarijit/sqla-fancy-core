@@ -6,7 +6,6 @@ SQLAlchemy core, but fancier.
 
 ```python
 import sqlalchemy as sa
-
 from sqla_fancy_core import TableFactory
 
 tf = TableFactory()
@@ -68,6 +67,11 @@ with engine.connect() as conn:
 ### With Pydantic Validation
 
 ```python
+from pydantic import BaseModel, Field
+from sqla_fancy_core import TableFactory
+
+tf = TableFactory()
+
 def field(col, default=...):
     return col.info["field"](default)
 
