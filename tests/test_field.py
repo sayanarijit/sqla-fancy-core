@@ -1,3 +1,5 @@
+from typing import Optional
+
 import pytest
 
 
@@ -28,7 +30,7 @@ def test_field():
 
     # Define a pydantic schema
     class UpdateUser(BaseModel):
-        name: str | None = field(User.name, None)
+        name: Optional[str] = field(User.name, None)
 
     assert CreateUser(name="John").model_dump() == {"name": "John"}
     assert UpdateUser(name="John").model_dump() == {"name": "John"}
