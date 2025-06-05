@@ -1,6 +1,6 @@
 """SQLAlchemy core, but fancier."""
 
-from typing import Optional, Union
+from typing import Optional, Union, overload
 
 import sqlalchemy as sa
 
@@ -135,7 +135,25 @@ class TableFactory:
     def created_at(self, name="created_at", *args, **kwargs) -> sa.Column:
         return self.datetime(name, default=sa.func.now(), *args, **kwargs)
 
-    def __call__(self, name, *args, **kwargs):
-        cols = self.c
-        self.c = []
-        return sa.Table(name, self.metadata, *args, *cols, **kwargs)
+    @overload
+    def __call__(self, arg1: str, *args, **kwargs) -> sa.Table: ...
+    @overload
+    def __call__(self, arg1: sa.Column, *args, **kwargs) -> sa.Column: ...
+    @overload
+    def __call__(self, arg1: sa.Table, *args, **kwargs) -> sa.Table: ...
+    def __call__(self, arg1, *args, **kwargs):
+        if isinstance(arg1, str):
+            cols = self.c
+            self.c = []
+            return sa.Table(arg1, self.metadata, *args, *cols, **kwargs)
+        elif isinstance(arg1, sa.Column):
+            arg1.info["args"] = args
+            arg1.info["kwargs"] = kwargs
+            self.c.append(arg1)
+            return arg1
+        elif isinstance(arg1, sa.Table):
+            cols = self.c
+            self.c = []
+            return sa.Table(arg1.name, self.metadata, *args, *cols, **kwargs)
+        else:
+            raise TypeError(f"Expected a string or Column, got {type(arg1).__name__}")

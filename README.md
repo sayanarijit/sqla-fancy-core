@@ -20,16 +20,62 @@ class Author:
 
     Table = tf("author")
 
-# Define a table
+# Or define it without losing type hints
 class Book:
+    id = tf(sa.Column("id", sa.Integer, primary_key=True, autoincrement=True))
+    title = tf(sa.Column("title", sa.String(255), nullable=False))
+    author_id = tf(sa.Column("author_id", sa.Integer, sa.ForeignKey(Author.id)))
+    created_at = tf(
+        sa.Column(
+            "created_at",
+            sa.DateTime,
+            nullable=False,
+            server_default=sa.func.now(),
+        )
+    )
+    updated_at = tf(
+        sa.Column(
+            "updated_at",
+            sa.DateTime,
+            nullable=False,
+            server_default=sa.func.now(),
+            onupdate=sa.func.now(),
+        )
+    )
 
-    id = tf.auto_id()
-    title = tf.string("title")
-    author_id = tf.foreign_key("author_id", Author.id)
-    created_at = tf.created_at()
-    updated_at = tf.updated_at()
+    Table = tf(sa.Table("book", sa.MetaData()))
 
-    Table = tf("book")
+# Create the tables
+engine = sa.create_engine("sqlite:///:memory:")
+tf.metadata.create_all(engine)
+
+with engine.connect() as conn:
+    # Insert author
+    qry = (
+        sa.insert(Author.Table)
+        .values({Author.name: "John Doe"})
+        .returning(Author.id)
+    )
+    author = next(conn.execute(qry).mappings())
+    author_id = author[Author.id]
+    assert author_id == 1
+
+    # Insert book
+    qry = (
+        sa.insert(Book.Table)
+        .values({Book.title: "My Book", Book.author_id: author_id})
+        .returning(Book.id)
+    )
+    book = next(conn.execute(qry).mappings())
+    assert book[Book.id] == 1
+
+    # Query the data
+    qry = sa.select(Author.name, Book.title).join(
+        Book.Table,
+        Book.author_id == Author.id,
+    )
+    result = conn.execute(qry).fetchall()
+    assert result == [("John Doe", "My Book")], result
 
 # Create the tables
 engine = sa.create_engine("sqlite:///:memory:")
@@ -67,18 +113,22 @@ with engine.connect() as conn:
 ### With Pydantic Validation
 
 ```python
+from typing import Any
+import sqlalchemy as sa
 from pydantic import BaseModel, Field
+
 from sqla_fancy_core import TableFactory
 
 tf = TableFactory()
 
-def field(col, default=...):
-    return col.info["field"](default)
+def field(col, default: Any = ...) -> Field:
+    return col.info["kwargs"]["field"](default)
 
 # Define a table
 class User:
-    name = tf.string(
-        "name", info={"field": lambda default: Field(default, max_length=5)}
+    name = tf(
+        sa.Column("name", sa.String),
+        field=lambda default: Field(default, max_length=5),
     )
     Table = tf("author")
 
