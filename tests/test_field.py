@@ -2,19 +2,23 @@ import pytest
 
 
 def test_field():
+    from typing import Any
+
+    import sqlalchemy as sa
     from pydantic import BaseModel, Field
 
     from sqla_fancy_core import TableFactory
 
     tf = TableFactory()
 
-    def field(col, default=...):
-        return col.info["field"](default)
+    def field(col, default: Any = ...) -> Field:
+        return col.info["kwargs"]["field"](default)
 
     # Define a table
     class User:
-        name = tf.string(
-            "name", info={"field": lambda default: Field(default, max_length=5)}
+        name = tf(
+            sa.Column("name", sa.String),
+            field=lambda default: Field(default, max_length=5),
         )
         Table = tf("author")
 

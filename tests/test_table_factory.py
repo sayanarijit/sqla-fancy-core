@@ -14,15 +14,30 @@ def test_table_factory():
 
         Table = tf("author")
 
-    # Define a table
+    # Or define it without losing type hints
     class Book:
-        id = tf.auto_id()
-        title = tf.string("title")
-        author_id = tf.foreign_key("author_id", Author.id)
-        created_at = tf.created_at()
-        updated_at = tf.updated_at()
+        id = tf(sa.Column("id", sa.Integer, primary_key=True, autoincrement=True))
+        title = tf(sa.Column("title", sa.String(255), nullable=False))
+        author_id = tf(sa.Column("author_id", sa.Integer, sa.ForeignKey(Author.id)))
+        created_at = tf(
+            sa.Column(
+                "created_at",
+                sa.DateTime,
+                nullable=False,
+                server_default=sa.func.now(),
+            )
+        )
+        updated_at = tf(
+            sa.Column(
+                "updated_at",
+                sa.DateTime,
+                nullable=False,
+                server_default=sa.func.now(),
+                onupdate=sa.func.now(),
+            )
+        )
 
-        Table = tf("book")
+        Table = tf(sa.Table("book", sa.MetaData()))
 
     # Create the tables
     engine = sa.create_engine("sqlite:///:memory:")
