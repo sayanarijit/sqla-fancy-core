@@ -17,8 +17,7 @@ class TableFactory:
 
     def col(self, *args, **kwargs) -> sa.Column:
         col = sa.Column(*args, **kwargs)
-        self.c.append(col)
-        return col
+        return self(col)
 
     def integer(self, name: str, *args, **kwargs) -> sa.Column:
         return self.col(name, sa.Integer, *args, **kwargs)
