@@ -76,38 +76,6 @@ with engine.connect() as conn:
     )
     result = conn.execute(qry).fetchall()
     assert result == [("John Doe", "My Book")], result
-
-# Create the tables
-engine = sa.create_engine("sqlite:///:memory:")
-tf.metadata.create_all(engine)
-
-with engine.connect() as conn:
-    # Insert author
-    qry = (
-        sa.insert(Author.Table)
-        .values({Author.name: "John Doe"})
-        .returning(Author.id)
-    )
-    author = next(conn.execute(qry).mappings())
-    author_id = author[Author.id]
-    assert author_id == 1
-
-    # Insert book
-    qry = (
-        sa.insert(Book.Table)
-        .values({Book.title: "My Book", Book.author_id: author_id})
-        .returning(Book.id)
-    )
-    book = next(conn.execute(qry).mappings())
-    assert book[Book.id] == 1
-
-    # Query the data
-    qry = sa.select(Author.name, Book.title).join(
-        Book.Table,
-        Book.author_id == Author.id,
-    )
-    result = conn.execute(qry).fetchall()
-    assert result == [("John Doe", "My Book")], result
 ```
 
 ### With Pydantic Validation
