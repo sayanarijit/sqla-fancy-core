@@ -6,13 +6,13 @@ SQLAlchemy core, but fancier.
 
 ```python
 import sqlalchemy as sa
+
 from sqla_fancy_core import TableFactory
 
 tf = TableFactory()
 
 # Define a table
 class Author:
-
     id = tf.auto_id()
     name = tf.string("name")
     created_at = tf.created_at()
@@ -56,7 +56,7 @@ with engine.connect() as conn:
         .values({Author.name: "John Doe"})
         .returning(Author.id)
     )
-    author = next(conn.execute(qry).mappings())
+    author = conn.execute(qry).mappings().first()
     author_id = author[Author.id]
     assert author_id == 1
 
@@ -66,7 +66,7 @@ with engine.connect() as conn:
         .values({Book.title: "My Book", Book.author_id: author_id})
         .returning(Book.id)
     )
-    book = next(conn.execute(qry).mappings())
+    book = conn.execute(qry).mappings().first()
     assert book[Book.id] == 1
 
     # Query the data
@@ -74,7 +74,7 @@ with engine.connect() as conn:
         Book.Table,
         Book.author_id == Author.id,
     )
-    result = conn.execute(qry).fetchall()
+    result = conn.execute(qry).all()
     assert result == [("John Doe", "My Book")], result
 ```
 

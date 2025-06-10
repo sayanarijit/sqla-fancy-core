@@ -11,8 +11,9 @@ class TableFactory:
     def __init__(self, metadata: Optional[sa.MetaData] = None):
         """Initialize the factory with default values."""
         if metadata is None:
-            metadata = sa.MetaData()
-        self.metadata = metadata
+            self.metadata = sa.MetaData()
+        else:
+            self.metadata = metadata
         self.c = []
 
     def col(self, *args, **kwargs) -> sa.Column:

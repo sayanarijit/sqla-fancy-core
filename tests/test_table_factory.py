@@ -50,7 +50,7 @@ def test_table_factory():
             .values({Author.name: "John Doe"})
             .returning(Author.id)
         )
-        author = next(conn.execute(qry).mappings())
+        author = conn.execute(qry).mappings().first()
         author_id = author[Author.id]
         assert author_id == 1
 
@@ -60,7 +60,7 @@ def test_table_factory():
             .values({Book.title: "My Book", Book.author_id: author_id})
             .returning(Book.id)
         )
-        book = next(conn.execute(qry).mappings())
+        book = conn.execute(qry).mappings().first()
         assert book[Book.id] == 1
 
         # Query the data
@@ -68,5 +68,5 @@ def test_table_factory():
             Book.Table,
             Book.author_id == Author.id,
         )
-        result = conn.execute(qry).fetchall()
+        result = conn.execute(qry).all()
         assert result == [("John Doe", "My Book")], result
