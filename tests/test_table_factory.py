@@ -43,14 +43,14 @@ def test_table_factory():
     engine = sa.create_engine("sqlite:///:memory:")
     tf.metadata.create_all(engine)
 
-    with engine.connect() as conn:
+    with engine.begin() as txn:
         # Insert author
         qry = (
             sa.insert(Author.Table)
             .values({Author.name: "John Doe"})
             .returning(Author.id)
         )
-        author = conn.execute(qry).mappings().first()
+        author = txn.execute(qry).mappings().first()
         author_id = author[Author.id]
         assert author_id == 1
 
@@ -60,7 +60,7 @@ def test_table_factory():
             .values({Book.title: "My Book", Book.author_id: author_id})
             .returning(Book.id)
         )
-        book = conn.execute(qry).mappings().first()
+        book = txn.execute(qry).mappings().first()
         assert book[Book.id] == 1
 
         # Query the data
@@ -68,5 +68,5 @@ def test_table_factory():
             Book.Table,
             Book.author_id == Author.id,
         )
-        result = conn.execute(qry).all()
+        result = txn.execute(qry).all()
         assert result == [("John Doe", "My Book")], result
