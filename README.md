@@ -123,3 +123,17 @@ with pytest.raises(ValueError):
 with pytest.raises(ValueError):
     UpdateUser(name="John Doe")
 ```
+
+### Target audience
+
+Production. For folks who prefer query maker over ORM.
+
+### Comparison with other projects:
+
+**Piccolo**: Tight integration with drivers. Very opinionated. Not as flexible or mature as sqlalchemy core.
+
+**Pypika**: Doesn’t prevent sql injection by default. Hence can be considered insecure.
+
+**Raw string queries with placeholders**: sacrifices code readability, and prone to sql injection if one forgets to use placeholders.
+
+**Other ORMs**: They are full blown ORMs, not query makers.
