@@ -1,6 +1,12 @@
 # sqla-fancy-core
 
-SQLAlchemy core, but fancier.
+There are plenty of ORMs to choose from in Python world, but not many sql query makers for folks who prefer to stay close to the original SQL syntax, without sacrificing security and code readability. The closest, most mature and most flexible query maker you can find is SQLAlchemy core.
+
+But the syntax of defining tables and making queries has a lot of scope for improvement. For example, the `table.c.column` syntax is too dynamic, unreadable, and probably has performance impact too. It also doesn’t play along with static type checkers and linting tools.
+
+So here I present one attempt at getting the best out of SQLAlchemy core by changing the way we define tables.
+
+The table factory class it exposes, helps define tables in a way that eliminates the above drawbacks. Moreover, you can subclass it to add your preferred global defaults for columns (e.g. not null as default). Or specify custom column types with consistent naming (e.g. created_at).
 
 ### Basic Usage
 
