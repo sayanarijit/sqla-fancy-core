@@ -1,6 +1,7 @@
 """Some decorators for fun times with SQLAlchemy core."""
 
 import functools
+import inspect
 from typing import Union, overload
 
 import sqlalchemy as sa
@@ -44,8 +45,6 @@ def transact(func):
     """
 
     # Find the parameter with value Inject
-    import inspect
-
     sig = inspect.signature(func)
     inject_param_name = None
     for name, param in sig.parameters.items():
@@ -106,7 +105,7 @@ def connect(func):
 
     Example: ::
         @connect
-        def get_user_count(conn: sa.Connection):
+        def get_user_count(conn: sa.Connection = Inject(engine)) -> int:
             return conn.execute(...).scalar_one()
 
         # This will create a new connection
@@ -118,8 +117,6 @@ def connect(func):
     """
 
     # Find the parameter with value Inject
-    import inspect
-
     sig = inspect.signature(func)
     inject_param_name = None
     for name, param in sig.parameters.items():
@@ -161,4 +158,3 @@ def connect(func):
                     return func(*args, **kwargs)
 
         return sync_wrapper
-
