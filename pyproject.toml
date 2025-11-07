@@ -33,6 +33,7 @@ test = [
   "sqlalchemy[asyncio]",
   "aiosqlite",
 ]
+dev = ["hatchling", "twine", "build", "ipython"]
 
 [project.urls]
 "Homepage" = "https://github.com/sayanarijit/sqla-fancy-core"

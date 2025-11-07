@@ -12,6 +12,7 @@ The table factory class it exposes, helps define tables in a way that eliminates
 
 ```python
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from sqla_fancy_core import TableFactory
 
@@ -51,18 +52,21 @@ class Book:
 
     Table = tf(sa.Table("book", sa.MetaData()))
 
-# Create the tables
-engine = sa.create_engine("sqlite:///:memory:")
-tf.metadata.create_all(engine)
+# Create the engine
+engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 
-with engine.begin() as txn:
+# Create the tables
+async with engine.begin() as conn:
+    await conn.run_sync(tf.metadata.create_all)
+
+async with engine.begin() as txn:
     # Insert author
     qry = (
         sa.insert(Author.Table)
         .values({Author.name: "John Doe"})
         .returning(Author.id)
     )
-    author = txn.execute(qry).mappings().one()
+    author = (await txn.execute(qry)).mappings().one()
     author_id = author[Author.id]
     assert author_id == 1
 
@@ -72,7 +76,7 @@ with engine.begin() as txn:
         .values({Book.title: "My Book", Book.author_id: author_id})
         .returning(Book.id)
     )
-    book = txn.execute(qry).mappings().one()
+    book = (await txn.execute(qry)).mappings().one()
     assert book[Book.id] == 1
 
     # Query the data
@@ -80,8 +84,106 @@ with engine.begin() as txn:
         Book.Table,
         Book.author_id == Author.id,
     )
-    result = txn.execute(qry).all()
+    result = (await txn.execute(qry)).all()
     assert result == [("John Doe", "My Book")], result
+```
+
+### Fancy Engine Wrappers
+
+`sqla-fancy-core` provides `fancy` engine wrappers that simplify database interactions by automatically managing connections and transactions. The `fancy` function wraps a SQLAlchemy `Engine` or `AsyncEngine` and returns a wrapper object with two primary methods:
+
+- `x(conn, query)`: Executes a query. It uses the provided `conn` if available, otherwise it creates a new connection.
+- `tx(conn, query)`: Executes a query within a transaction. It uses the provided `conn` if available, otherwise it creates a new connection and begins a transaction.
+
+This is particularly useful for writing connection-agnostic query functions.
+
+**Sync Example:**
+
+```python
+import sqlalchemy as sa
+from sqla_fancy_core import fancy
+
+engine = sa.create_engine("sqlite:///:memory:")
+fancy_engine = fancy(engine)
+
+def get_data(conn: sa.Connection | None = None):
+    return fancy_engine.tx(conn, sa.text("SELECT 1")).scalar_one()
+
+# Without an explicit transaction
+assert get_data() == 1
+
+# With an explicit transaction
+with engine.begin() as conn:
+    assert get_data(conn) == 1
+```
+
+**Async Example:**
+
+```python
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqla_fancy_core import fancy
+
+async def main():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    fancy_engine = fancy(engine)
+
+    async def get_data(conn: sa.AsyncConnection | None = None):
+        result = await fancy_engine.x(conn, sa.text("SELECT 1"))
+        return await result.scalar_one()
+
+    # Without an explicit transaction
+    assert await get_data() == 1
+
+    # With an explicit transaction
+    async with engine.connect() as conn:
+        assert await get_data(conn) == 1
+```
+
+### Transaction Decorator
+
+The `@transact` decorator further simplifies transaction management. It wraps a function and ensures that it runs within a transaction. The decorator provides a connection object as the argument typed as `Connection` or `AsyncConnection`.
+
+**Sync Example:**
+
+```python
+import sqlalchemy as sa
+from sqla_fancy_core import transact
+
+engine = sa.create_engine("sqlite:///:memory:")
+
+@transact(engine)
+def create_user(conn: sa.Connection, name: str):
+    return conn.execute(sa.text(f"INSERT INTO users (name) VALUES ('{name}')"))
+
+# This will run in a transaction
+create_user("John Doe")
+
+# This will also run in the scoped transaction
+with engine.begin() as conn:
+    create_user(conn, "Jane Doe")
+```
+
+**Async Example:**
+
+```python
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqla_fancy_core import transact
+
+async def main():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @transact(engine)
+    async def create_user(conn: sa.AsyncConnection, name: str):
+        return await conn.execute(sa.text(f"INSERT INTO users (name) VALUES ('{name}')"))
+
+    # This will run in a transaction
+    await create_user("John Doe")
+
+    # This will also run in the scoped transaction
+    async with engine.begin() as conn:
+        await create_user(conn, "Jane Doe")
 ```
 
 ### With Pydantic Validation

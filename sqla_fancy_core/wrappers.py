@@ -1,26 +1,4 @@
-"""Some wrappers for fun times with SQLAlchemy core.
-
-# This makes the following syntax possible:
-
-fancy_engine = fancy(sa.create_engine("sqlite:///:memory:"))
-
-def handler(conn: Connection | None = None):
-    # Execute a query outside of a transaction
-    result = fancy_engine.x(conn, sa.select(...))
-
-    # Execute a query within a transaction
-    result = fancy_engine.tx(conn, sa.insert(...))
-
-# Using an explicit connection:
-with fancy_engine.engine.connect() as conn:
-    handler(conn=conn)
-
-# Using a dependency injection system:
-handler(conn=dependency(transaction))  # Uses the provided transaction connection
-
-# Or without a given connection (e.g. in IPython shell):
-handler()
-"""
+"""Some wrappers for fun times with SQLAlchemy core."""
 
 from typing import Any, Optional, TypeVar, overload
 
@@ -115,7 +93,7 @@ class FancyEngineWrapper:
         If a connection is provided, use it; otherwise, create a new one.
         """
         if connection:
-            if connection._transaction:
+            if connection.in_transaction():
                 # Transaction is already active
                 return connection.execute(
                     statement, parameters, execution_options=execution_options
@@ -132,7 +110,7 @@ class FancyEngineWrapper:
                 )
 
 
-class AsyncFancyEngineWrpper:
+class AsyncFancyEngineWrapper:
     """A wrapper around SQLAlchemy AsyncEngine with additional features."""
 
     def __init__(self, engine: AsyncEngine) -> None:
@@ -209,8 +187,7 @@ class AsyncFancyEngineWrpper:
         If a connection is provided, use it; otherwise, create a new one.
         """
         if connection:
-            if connection.sync_connection and connection.sync_connection._transaction:
-                # Transaction is already active
+            if connection.in_transaction():
                 return await connection.execute(
                     statement, parameters, execution_options=execution_options
                 )
@@ -229,12 +206,34 @@ class AsyncFancyEngineWrpper:
 @overload
 def fancy(obj: Engine, /) -> FancyEngineWrapper: ...
 @overload
-def fancy(obj: AsyncEngine, /) -> AsyncFancyEngineWrpper: ...
+def fancy(obj: AsyncEngine, /) -> AsyncFancyEngineWrapper: ...
 def fancy(obj, /):
-    """Wrap the given engine in the appropriate FancyEngine wrapper."""
+    """Fancy engine wrapper makes the following syntax possible: ::
+
+    import sqlalchemy as sa
+
+    fancy_engine = fancy(sa.create_engine("sqlite:///:memory:"))
+
+    def handler(conn: sa.Connection | None = None):
+        # Execute a query outside of a transaction
+        result = fancy_engine.x(conn, sa.select(...))
+
+        # Execute a query within a transaction
+        result = fancy_engine.tx(conn, sa.insert(...))
+
+    # Using an explicit connection:
+    with fancy_engine.engine.connect() as conn:
+        handler(conn=conn)
+
+    # Using a dependency injection system:
+        handler(conn=dependency(transaction))  # Uses the provided transaction connection
+
+    # Or without a given connection (e.g. in IPython shell):
+        handler()
+    """
     if isinstance(obj, Engine):
         return FancyEngineWrapper(obj)
     elif isinstance(obj, AsyncEngine):
-        return AsyncFancyEngineWrpper(obj)
+        return AsyncFancyEngineWrapper(obj)
     else:
         raise TypeError("Unsupported input type for fancy()")
