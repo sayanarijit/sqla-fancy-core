@@ -1,22 +1,13 @@
-"""Some decorators for fun times with SQLAlchemy core.
-
-@transact decorator makes the following syntax possible: ::
-
-    import sqlalchemy as sa
-    engine = sa.create_engine("sqlite:///:memory:")
-
-    @transact(engine)
-    def handler(conn: sa.Connection):
-        # Execute a query within a transaction
-        result = conn.execute(sa.insert(...))
-
-This decorator wraps the function in a transaction, providing a connection
-object if one is not already passed.
-"""
+"""Some decorators for fun times with SQLAlchemy core."""
 
 import functools
 import inspect
-from typing import Union
+from typing import Union, get_args, get_origin
+
+try:
+    from typing import Annotated
+except ImportError:
+    Annotated = None
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -64,15 +55,26 @@ def transact(engine: EngineType):
                 if param_type is conn_type:
                     conn_param_name = param_name
                     break
+                if Annotated and get_origin(param_type) is Annotated:
+                    actual_type = get_args(param_type)[0]
+                    if actual_type is conn_type:
+                        conn_param_name = param_name
+                        break
         except Exception:
             pass
 
         if conn_param_name is None:
             # Fallback for when get_annotations fails or doesn't find it
             for param in sig.parameters.values():
-                if param.annotation is conn_type:
+                param_type = param.annotation
+                if param_type is conn_type:
                     conn_param_name = param.name
                     break
+                if Annotated and get_origin(param_type) is Annotated:
+                    actual_type = get_args(param_type)[0]
+                    if actual_type is conn_type:
+                        conn_param_name = param.name
+                        break
 
         if conn_param_name is None:
             raise TypeError(

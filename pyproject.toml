@@ -32,6 +32,7 @@ test = [
   "pydantic",
   "sqlalchemy[asyncio]",
   "aiosqlite",
+  "fastapi",
 ]
 dev = ["hatchling", "twine", "build", "ipython"]
 

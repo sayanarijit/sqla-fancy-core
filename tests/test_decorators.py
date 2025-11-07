@@ -1,3 +1,5 @@
+from typing import Annotated
+
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
@@ -83,6 +85,33 @@ def test_decorator_sync_rollback(sync_engine):
     with sync_engine.begin() as conn:
         count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
         assert count == 0
+
+
+def test_dependency_injection(sync_engine):
+    """Test that the decorator works well with dependency injection frameworks."""
+
+    @transact(sync_engine)
+    def create_user_annotated(conn: Annotated[sa.Connection, None], name: str):
+        assert isinstance(conn, sa.Connection)
+        conn.execute(sa.insert(users).values(name=name))
+
+    from fastapi import Depends
+
+    @transact(sync_engine)
+    def create_user_fastapi(name: str, conn: sa.Connection = Depends()):
+        assert isinstance(conn, sa.Connection)
+        conn.execute(sa.insert(users).values(name=name))
+
+    create_user_annotated(name="diuser")  # type: ignore
+    create_user_fastapi(name="fastapiuser")  # type: ignore
+
+    with sync_engine.begin() as conn:
+        count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
+        assert count == 2
+        name = conn.execute(sa.select(users.c.name).where(users.c.id == 1)).scalar_one()
+        assert name == "diuser"
+        name = conn.execute(sa.select(users.c.name).where(users.c.id == 2)).scalar_one()
+        assert name == "fastapiuser"
 
 
 #
