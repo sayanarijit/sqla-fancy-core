@@ -7,7 +7,7 @@ from typing import Union, overload
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-EngineType = Union[sa.engine.Engine, AsyncEngine]
+EngineType = Union[sa.Engine, AsyncEngine]
 
 
 class _Injectable:
