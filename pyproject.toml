@@ -25,7 +25,14 @@ classifiers = [
 dependencies = ["sqlalchemy"]
 
 [project.optional-dependencies]
-test = ["pytest", "flake8", "pydantic"]
+test = [
+  "pytest",
+  "pytest-asyncio",
+  "flake8",
+  "pydantic",
+  "sqlalchemy[asyncio]",
+  "aiosqlite",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/sayanarijit/sqla-fancy-core"

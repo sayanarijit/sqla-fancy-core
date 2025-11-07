@@ -62,7 +62,7 @@ with engine.begin() as txn:
         .values({Author.name: "John Doe"})
         .returning(Author.id)
     )
-    author = txn.execute(qry).mappings().first()
+    author = txn.execute(qry).mappings().one()
     author_id = author[Author.id]
     assert author_id == 1
 
@@ -72,7 +72,7 @@ with engine.begin() as txn:
         .values({Book.title: "My Book", Book.author_id: author_id})
         .returning(Book.id)
     )
-    book = txn.execute(qry).mappings().first()
+    book = txn.execute(qry).mappings().one()
     assert book[Book.id] == 1
 
     # Query the data
@@ -126,9 +126,11 @@ with pytest.raises(ValueError):
 
 ### Target audience
 
-Production. For folks who prefer query maker over ORM.
+Production. For folks who prefer query maker over ORM, looking for a robust sync/async driver integration, wanting to keep code readable and secure.
 
 ### Comparison with other projects:
+
+**Peewee**: Not as flexible or mature as sqlalchemy core. Also, no official async support.
 
 **Piccolo**: Tight integration with drivers. Very opinionated. Not as flexible or mature as sqlalchemy core.
 
