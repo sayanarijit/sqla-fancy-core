@@ -90,8 +90,7 @@ def transact(engine: EngineType):
             if conn_param.name in bound_args.arguments:
                 conn = bound_args.arguments[conn_param.name]
                 if conn.in_transaction():
-                    with conn.begin_nested():
-                        return func(*args, **kwargs)
+                    return func(*args, **kwargs)
                 else:
                     with conn.begin():
                         return func(*args, **kwargs)
@@ -107,8 +106,7 @@ def transact(engine: EngineType):
             if conn_param.name in bound_args.arguments:
                 conn = bound_args.arguments[conn_param.name]
                 if conn.in_transaction():
-                    async with conn.begin_nested():
-                        return await func(*args, **kwargs)
+                    return await func(*args, **kwargs)
                 else:
                     async with conn.begin():
                         return await func(*args, **kwargs)
