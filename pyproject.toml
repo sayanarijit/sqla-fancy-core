@@ -1,6 +1,6 @@
 [project]
 name = 'sqla-fancy-core'
-version = '1.0.2'
+version = '1.1.0'
 description = 'SQLAlchemy core, but fancier'
 readme = 'README.md'
 requires-python = ">=3.7"
@@ -25,7 +25,18 @@ classifiers = [
 dependencies = ["sqlalchemy"]
 
 [project.optional-dependencies]
-test = ["pytest", "flake8", "pydantic"]
+test = [
+  "pytest",
+  "pytest-asyncio",
+  "flake8",
+  "pydantic",
+  "sqlalchemy[asyncio]",
+  "aiosqlite",
+  "fastapi",
+  "httpx",
+  "python-multipart",
+]
+dev = ["hatchling", "twine", "build", "ipython"]
 
 [project.urls]
 "Homepage" = "https://github.com/sayanarijit/sqla-fancy-core"

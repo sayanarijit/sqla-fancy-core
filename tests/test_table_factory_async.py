@@ -1,5 +1,10 @@
-def test_table_factory():
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_table_factory_async():
     import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
 
     from sqla_fancy_core import TableFactory
 
@@ -40,19 +45,20 @@ def test_table_factory():
         Table = tf(sa.Table("book", sa.MetaData()))
 
     # Create the engine
-    engine = sa.create_engine("sqlite:///:memory:")
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 
     # Create the tables
-    tf.metadata.create_all(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(tf.metadata.create_all)
 
-    with engine.begin() as txn:
+    async with engine.begin() as txn:
         # Insert author
         qry = (
             sa.insert(Author.Table)
             .values({Author.name: "John Doe"})
             .returning(Author.id)
         )
-        author = txn.execute(qry).mappings().one()
+        author = (await txn.execute(qry)).mappings().one()
         author_id = author[Author.id]
         assert author_id == 1
 
@@ -62,7 +68,7 @@ def test_table_factory():
             .values({Book.title: "My Book", Book.author_id: author_id})
             .returning(Book.id)
         )
-        book = txn.execute(qry).mappings().one()
+        book = (await txn.execute(qry)).mappings().one()
         assert book[Book.id] == 1
 
         # Query the data
@@ -70,5 +76,5 @@ def test_table_factory():
             Book.Table,
             Book.author_id == Author.id,
         )
-        result = txn.execute(qry).all()
+        result = (await txn.execute(qry)).all()
         assert result == [("John Doe", "My Book")], result
