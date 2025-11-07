@@ -8,17 +8,16 @@ So here I present one attempt at getting the best out of SQLAlchemy core by chan
 
 The table factory class it exposes, helps define tables in a way that eliminates the above drawbacks. Moreover, you can subclass it to add your preferred global defaults for columns (e.g. not null as default). Or specify custom column types with consistent naming (e.g. created_at).
 
-### Basic Usage
+## Basic Usage
+
+First, let's define a table using the `TableFactory`.
 
 ```python
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine
-
 from sqla_fancy_core import TableFactory
 
 tf = TableFactory()
 
-# Define a table
 class Author:
     id = tf.auto_id()
     name = tf.string("name")
@@ -26,8 +25,11 @@ class Author:
     updated_at = tf.updated_at()
 
     Table = tf("author")
+```
 
-# Or define it without losing type hints
+The `TableFactory` provides a convenient way to define columns with common attributes. For more complex scenarios, you can define tables without losing type hints:
+
+```python
 class Book:
     id = tf(sa.Column("id", sa.Integer, primary_key=True, autoincrement=True))
     title = tf(sa.Column("title", sa.String(255), nullable=False))
@@ -51,6 +53,12 @@ class Book:
     )
 
     Table = tf(sa.Table("book", sa.MetaData()))
+```
+
+Now, let's create an engine and the tables.
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine
 
 # Create the engine
 engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -58,7 +66,15 @@ engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 # Create the tables
 async with engine.begin() as conn:
     await conn.run_sync(tf.metadata.create_all)
+```
 
+With the tables created, you can perform CRUD operations.
+
+### CRUD Operations
+
+Here's how you can interact with the database using the defined tables.
+
+```python
 async with engine.begin() as txn:
     # Insert author
     qry = (
@@ -88,7 +104,7 @@ async with engine.begin() as txn:
     assert result == [("John Doe", "My Book")], result
 ```
 
-### Fancy Engine Wrappers
+## Fancy Engine Wrappers
 
 `sqla-fancy-core` provides `fancy` engine wrappers that simplify database interactions by automatically managing connections and transactions. The `fancy` function wraps a SQLAlchemy `Engine` or `AsyncEngine` and returns a wrapper object with two primary methods:
 
@@ -140,7 +156,7 @@ async def main():
         assert await get_data(conn) == 1
 ```
 
-### Transaction Decorator
+## Transaction Decorator
 
 The `@transact` decorator further simplifies transaction management. It wraps a function and ensures that it runs within a transaction. The decorator provides a connection object as the argument typed as `Connection` or `AsyncConnection`.
 
@@ -186,12 +202,15 @@ async def main():
         await create_user(conn, "Jane Doe")
 ```
 
-### With Pydantic Validation
+## With Pydantic Validation
+
+You can integrate `sqla-fancy-core` with Pydantic for data validation.
 
 ```python
 from typing import Any
 import sqlalchemy as sa
 from pydantic import BaseModel, Field
+import pytest
 
 from sqla_fancy_core import TableFactory
 
@@ -226,13 +245,13 @@ with pytest.raises(ValueError):
     UpdateUser(name="John Doe")
 ```
 
-### Target audience
+## Target audience
 
 Production. For folks who prefer query maker over ORM, looking for a robust sync/async driver integration, wanting to keep code readable and secure.
 
-### Comparison with other projects:
+## Comparison with other projects:
 
-**Peewee**: Not as flexible or mature as sqlalchemy core. Also, no official async support.
+**Peewee**: No type hints. Also, no official async support.
 
 **Piccolo**: Tight integration with drivers. Very opinionated. Not as flexible or mature as sqlalchemy core.
 
@@ -241,3 +260,4 @@ Production. For folks who prefer query maker over ORM, looking for a robust sync
 **Raw string queries with placeholders**: sacrifices code readability, and prone to sql injection if one forgets to use placeholders.
 
 **Other ORMs**: They are full blown ORMs, not query makers.
+
