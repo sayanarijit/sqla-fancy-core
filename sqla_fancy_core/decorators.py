@@ -1,13 +1,7 @@
 """Some decorators for fun times with SQLAlchemy core."""
 
 import functools
-import inspect
-from typing import Union, get_args, get_origin
-
-try:
-    from typing import Annotated
-except ImportError:
-    Annotated = None
+from typing import Union, overload
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -15,107 +9,156 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 EngineType = Union[sa.engine.Engine, AsyncEngine]
 
 
-def transact(engine: EngineType):
+class _Injectable:
+    def __init__(self, engine: EngineType):
+        self.engine = engine
+
+
+@overload
+def Inject(engine: sa.Engine) -> sa.Connection: ...
+@overload
+def Inject(engine: AsyncEngine) -> AsyncConnection: ...
+def Inject(engine: EngineType):  # type: ignore
+    """A marker class for dependency injection."""
+    return _Injectable(engine)
+
+
+def transact(func):
     """A decorator that provides a transactional context.
 
     If the decorated function is called with a connection object, that
     connection is used. Otherwise, a new transaction is started from the
-    engine, and the new connection is passed to the function. The connection
-    argument is identified by its type annotation.
+    engine, and the new connection is injected to the function.
 
     Example: ::
-        @transact(engine)
-        def create_user(conn: sa.Connection, name: str):
+        @transact
+        def create_user(name: str, conn: sa.Connection = Inject(engine)):
             conn.execute(...)
 
         # This will create a new transaction
-        create_user(name="test")
+        create_user("test")
 
         # This will use the existing connection
         with engine.connect() as conn:
-            create_user(conn, name="existing")
-
+            create_user(name="existing", conn=conn)
     """
+
+    # Find the parameter with value Inject
+    import inspect
+
+    sig = inspect.signature(func)
+    inject_param_name = None
+    for name, param in sig.parameters.items():
+        if param.default is not inspect.Parameter.empty and isinstance(
+            param.default, _Injectable
+        ):
+            inject_param_name = name
+            break
+    if inject_param_name is None:
+        return func  # No injection needed
+
+    engine = sig.parameters[inject_param_name].default.engine
     is_async = isinstance(engine, AsyncEngine)
 
-    def decorator(func):
-        if is_async and not inspect.iscoroutinefunction(func):
-            raise TypeError("Async engine requires an async function.")
-        if not is_async and inspect.iscoroutinefunction(func):
-            raise TypeError("Sync engine requires a sync function.")
-
-        sig = inspect.signature(func)
-
-        conn_param_name = None
-        conn_type = AsyncConnection if is_async else sa.Connection
-
-        try:
-            type_hints = inspect.get_annotations(func)
-            for param_name, param_type in type_hints.items():
-                if param_type is conn_type:
-                    conn_param_name = param_name
-                    break
-                if Annotated and get_origin(param_type) is Annotated:
-                    actual_type = get_args(param_type)[0]
-                    if actual_type is conn_type:
-                        conn_param_name = param_name
-                        break
-        except Exception:
-            pass
-
-        if conn_param_name is None:
-            # Fallback for when get_annotations fails or doesn't find it
-            for param in sig.parameters.values():
-                param_type = param.annotation
-                if param_type is conn_type:
-                    conn_param_name = param.name
-                    break
-                if Annotated and get_origin(param_type) is Annotated:
-                    actual_type = get_args(param_type)[0]
-                    if actual_type is conn_type:
-                        conn_param_name = param.name
-                        break
-
-        if conn_param_name is None:
-            raise TypeError(
-                f"{func.__name__} must have an argument typed as "
-                f"{'AsyncConnection' if is_async else 'Connection'}."
-            )
-
-        conn_param = sig.parameters[conn_param_name]
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            bound_args = sig.bind_partial(*args, **kwargs)
-            if conn_param.name in bound_args.arguments:
-                conn = bound_args.arguments[conn_param.name]
-                if conn.in_transaction():
-                    return func(*args, **kwargs)
-                else:
-                    with conn.begin():
-                        return func(*args, **kwargs)
-            else:
-                # A connection was not provided, so create one.
-                with engine.begin() as conn:  # type: ignore
-                    kwargs[conn_param.name] = conn
-                    return func(*args, **kwargs)
+    if is_async:
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            bound_args = sig.bind_partial(*args, **kwargs)
-            if conn_param.name in bound_args.arguments:
-                conn = bound_args.arguments[conn_param.name]
+            conn = kwargs.get(inject_param_name)
+            if isinstance(conn, AsyncConnection):
                 if conn.in_transaction():
                     return await func(*args, **kwargs)
                 else:
                     async with conn.begin():
                         return await func(*args, **kwargs)
             else:
-                # A connection was not provided, so create one.
-                async with engine.begin() as conn:  # type: ignore
-                    kwargs[conn_param.name] = conn
+                async with engine.begin() as conn:
+                    kwargs[inject_param_name] = conn
                     return await func(*args, **kwargs)
 
-        return async_wrapper if is_async else sync_wrapper
+        return async_wrapper
 
-    return decorator
+    else:
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            conn = kwargs.get(inject_param_name)
+            if isinstance(conn, sa.Connection):
+                if conn.in_transaction():
+                    return func(*args, **kwargs)
+                else:
+                    with conn.begin():
+                        return func(*args, **kwargs)
+            else:
+                with engine.begin() as conn:
+                    kwargs[inject_param_name] = conn
+                    return func(*args, **kwargs)
+
+        return sync_wrapper
+
+
+def connect(func):
+    """A decorator that provides a connection context.
+
+    If the decorated function is called with a connection object, that
+    connection is used. Otherwise, a new connection is created from the
+    engine, and the new connection is injected to the function.
+
+    Example: ::
+        @connect
+        def get_user_count(conn: sa.Connection):
+            return conn.execute(...).scalar_one()
+
+        # This will create a new connection
+        count = get_user_count()
+
+        # This will use the existing connection
+        with engine.connect() as conn:
+            count = get_user_count(conn)
+    """
+
+    # Find the parameter with value Inject
+    import inspect
+
+    sig = inspect.signature(func)
+    inject_param_name = None
+    for name, param in sig.parameters.items():
+        if param.default is not inspect.Parameter.empty and isinstance(
+            param.default, _Injectable
+        ):
+            inject_param_name = name
+            break
+    if inject_param_name is None:
+        return func  # No injection needed
+
+    engine = sig.parameters[inject_param_name].default.engine
+    is_async = isinstance(engine, AsyncEngine)
+
+    if is_async:
+
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            conn = kwargs.get(inject_param_name)
+            if isinstance(conn, AsyncConnection):
+                return await func(*args, **kwargs)
+            else:
+                async with engine.connect() as conn:
+                    kwargs[inject_param_name] = conn
+                    return await func(*args, **kwargs)
+
+        return async_wrapper
+
+    else:
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            conn = kwargs.get(inject_param_name)
+            if isinstance(conn, sa.Connection):
+                return func(*args, **kwargs)
+            else:
+                with engine.connect() as conn:
+                    kwargs[inject_param_name] = conn
+                    return func(*args, **kwargs)
+
+        return sync_wrapper
+

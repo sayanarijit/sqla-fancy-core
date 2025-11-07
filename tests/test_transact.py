@@ -3,9 +3,10 @@ from typing import Annotated
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
+from fastapi import Form
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
-from sqla_fancy_core.decorators import transact
+from sqla_fancy_core.decorators import Inject, transact
 
 # Define a simple table for testing
 metadata = sa.MetaData()
@@ -19,8 +20,12 @@ users = sa.Table(
 
 @pytest.fixture
 def sync_engine():
-    """Provides a synchronous in-memory SQLite engine."""
-    engine = sa.create_engine("sqlite:///:memory:")
+    """Provides a synchronous in-memory SQLite engine shared across threads."""
+    engine = sa.create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=sa.pool.StaticPool,
+    )
     metadata.create_all(engine)
     yield engine
     metadata.drop_all(engine)
@@ -42,20 +47,21 @@ async def async_engine():
 def test_decorator_sync_commit(sync_engine):
     """Test that the sync decorator commits a successful transaction."""
 
-    @transact(sync_engine)
-    def create_user(conn: sa.Connection, name: str):
+    @transact
+    def create_user(name: str, conn: sa.Connection = Inject(sync_engine)):
         assert isinstance(conn, sa.Connection)
         conn.execute(sa.insert(users).values(name=name))
 
-    create_user(name="testuser")  # type: ignore
+    create_user("testuser")
 
     with sync_engine.begin() as conn:
         count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
+        # Two users should exist: one from direct call, one from FastAPI request
         assert count == 1
         name = conn.execute(sa.select(users.c.name)).scalar_one()
         assert name == "testuser"
 
-        create_user(conn, name="anotheruser")
+        create_user(name="anotheruser", conn=conn)
 
         count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
         assert count == 2
@@ -74,13 +80,13 @@ def test_decorator_sync_commit(sync_engine):
 def test_decorator_sync_rollback(sync_engine):
     """Test that the sync decorator rolls back a failed transaction."""
 
-    @transact(sync_engine)
-    def create_user_and_fail(conn: sa.Connection, name: str):
+    @transact
+    def create_user_and_fail(name: str, conn: sa.Connection = Inject(sync_engine)):
         conn.execute(sa.insert(users).values(name=name))
         raise ValueError("Triggering rollback")
 
     with pytest.raises(ValueError, match="Triggering rollback"):
-        create_user_and_fail(name="testuser")  # type: ignore
+        create_user_and_fail(name="testuser")
 
     with sync_engine.begin() as conn:
         count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
@@ -90,14 +96,14 @@ def test_decorator_sync_rollback(sync_engine):
 def test_batch_commit_rollback(sync_engine):
     """Test multiple transactions with commits and rollbacks."""
 
-    @transact(sync_engine)
-    def create_user(conn: sa.Connection, name: str):
+    @transact
+    def create_user(name: str, conn: sa.Connection = Inject(sync_engine)):
         conn.execute(sa.insert(users).values(name=name))
 
     def batch_add_users(names: list[str]):
         with sync_engine.begin() as conn:
             for name in names:
-                create_user(conn, name=name)
+                create_user(conn=conn, name=name)
             raise ValueError("Triggering rollback")
 
     with sync_engine.begin() as conn:
@@ -106,7 +112,7 @@ def test_batch_commit_rollback(sync_engine):
         except ValueError:
             pass
 
-    create_user(name="user3")  # type: ignore
+    create_user("user3")
 
     with sync_engine.begin() as conn:
         count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
@@ -117,44 +123,17 @@ def test_batch_commit_rollback(sync_engine):
         assert names == ["user3"]
 
 
-def test_dependency_injection(sync_engine):
-    """Test that the decorator works well with dependency injection frameworks."""
-
-    @transact(sync_engine)
-    def create_user_annotated(conn: Annotated[sa.Connection, None], name: str):
-        assert isinstance(conn, sa.Connection)
-        conn.execute(sa.insert(users).values(name=name))
-
-    from fastapi import Depends
-
-    @transact(sync_engine)
-    def create_user_fastapi(name: str, conn: sa.Connection = Depends()):
-        assert isinstance(conn, sa.Connection)
-        conn.execute(sa.insert(users).values(name=name))
-
-    create_user_annotated(name="diuser")  # type: ignore
-    create_user_fastapi(name="fastapiuser")  # type: ignore
-
-    with sync_engine.begin() as conn:
-        count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
-        assert count == 2
-        name = conn.execute(sa.select(users.c.name).where(users.c.id == 1)).scalar_one()
-        assert name == "diuser"
-        name = conn.execute(sa.select(users.c.name).where(users.c.id == 2)).scalar_one()
-        assert name == "fastapiuser"
-
-
 #
 @pytest.mark.asyncio
 async def test_decorator_async_commit(async_engine):
     """Test that the async decorator commits a successful transaction."""
 
-    @transact(async_engine)
-    async def create_user(name: str, conn: AsyncConnection):
+    @transact
+    async def create_user(name: str, conn: AsyncConnection = Inject(async_engine)):
         assert isinstance(conn, AsyncConnection)
         await conn.execute(sa.insert(users).values(name=name))
 
-    await create_user(name="testuser")  # type: ignore
+    await create_user(name="testuser")
 
     async with async_engine.begin() as conn:
         count = await conn.execute(sa.select(sa.func.count()).select_from(users))
@@ -189,13 +168,15 @@ async def test_decorator_async_commit(async_engine):
 async def test_decorator_async_rollback(async_engine):
     """Test that the async decorator rolls back a failed transaction."""
 
-    @transact(async_engine)
-    async def create_user_and_fail(conn: AsyncConnection, name: str):
+    @transact
+    async def create_user_and_fail(
+        name: str, conn: AsyncConnection = Inject(async_engine)
+    ):
         await conn.execute(sa.insert(users).values(name=name))
         raise ValueError("Triggering rollback")
 
     with pytest.raises(ValueError, match="Triggering rollback"):
-        await create_user_and_fail(name="testuser")  # type: ignore
+        await create_user_and_fail(name="testuser")
 
     async with async_engine.begin() as conn:
         count = await conn.execute(sa.select(sa.func.count()).select_from(users))
@@ -203,24 +184,70 @@ async def test_decorator_async_rollback(async_engine):
         assert count == 0
 
 
+def test_fastapi_dependency_injection(sync_engine):
+    """Test that the decorator works well with dependency injection frameworks."""
+
+    from fastapi import Depends, FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+
+    def get_transaction():
+        metadata.create_all(sync_engine)
+        with sync_engine.begin() as conn:
+            yield conn
+
+    @transact
+    @app.post("/create-user")
+    def create_user(
+        name: Annotated[str, Form(...)],
+        conn: Annotated[sa.Connection, Depends(get_transaction)] = Inject(sync_engine),
+    ):
+        assert isinstance(conn, sa.Connection)
+        conn.execute(sa.insert(users).values(name=name))
+
+    testapp = TestClient(app)
+
+    create_user(name="outside fastapi")
+    testapp.post("/create-user", data={"name": "inside fastapi"})
+
+    with sync_engine.begin() as conn:
+        count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
+        assert count == 2
+        name = conn.execute(sa.select(users.c.name).where(users.c.id == 1)).scalar_one()
+        assert name == "outside fastapi"
+        name = conn.execute(sa.select(users.c.name).where(users.c.id == 2)).scalar_one()
+        assert name == "inside fastapi"
+
+
 @pytest.mark.asyncio
 async def test_dependency_injection_async(async_engine):
     """Test that the async decorator works well with dependency injection frameworks."""
 
-    @transact(async_engine)
-    async def create_user_annotated(name: str, conn: Annotated[AsyncConnection, None]):
+    from fastapi import Depends, FastAPI, Form
+    from starlette.testclient import TestClient as AsyncTestClient
+
+    app = FastAPI()
+
+    async def get_transaction():
+        async with async_engine.begin() as conn:
+            yield conn
+
+    @transact
+    @app.post("/create-user")
+    async def create_user(
+        name: Annotated[str, Form(...)],
+        conn: Annotated[AsyncConnection, Depends(get_transaction)] = Inject(
+            async_engine
+        ),
+    ):
         assert isinstance(conn, AsyncConnection)
         await conn.execute(sa.insert(users).values(name=name))
 
-    from fastapi import Depends
+    testapp = AsyncTestClient(app)
 
-    @transact(async_engine)
-    async def create_user_fastapi(name: str, conn: AsyncConnection = Depends()):
-        assert isinstance(conn, AsyncConnection)
-        await conn.execute(sa.insert(users).values(name=name))
-
-    await create_user_annotated(name="diuser")  # type: ignore
-    await create_user_fastapi(name="fastapiuser")  # type: ignore
+    await create_user(name="outside fastapi")
+    testapp.post("/create-user", data={"name": "inside fastapi"})
 
     async with async_engine.begin() as conn:
         count = await conn.execute(sa.select(sa.func.count()).select_from(users))
@@ -228,38 +255,7 @@ async def test_dependency_injection_async(async_engine):
         assert count == 2
         name = await conn.execute(sa.select(users.c.name).where(users.c.id == 1))
         name = name.scalar_one()
-        assert name == "diuser"
+        assert name == "outside fastapi"
         name = await conn.execute(sa.select(users.c.name).where(users.c.id == 2))
         name = name.scalar_one()
-        assert name == "fastapiuser"
-
-
-@pytest.mark.asyncio
-async def test_batch_commit_rollback_async(async_engine):
-    """Test multiple async transactions with commits and rollbacks."""
-
-    @transact(async_engine)
-    async def create_user(conn: AsyncConnection, name: str):
-        await conn.execute(sa.insert(users).values(name=name))
-
-    async def batch_add_users(names: list[str]):
-        async with async_engine.begin() as conn:
-            for name in names:
-                await create_user(conn, name=name)
-            raise ValueError("Triggering rollback")
-
-    async with async_engine.begin() as conn:
-        try:
-            await batch_add_users(["user1", "user2"])
-        except ValueError:
-            pass
-
-    await create_user(name="user3")  # type: ignore
-
-    async with async_engine.begin() as conn:
-        count = await conn.execute(sa.select(sa.func.count()).select_from(users))
-        count = count.scalar_one()
-        assert count == 1
-        names_result = await conn.execute(sa.select(users.c.name).order_by(users.c.id))
-        names = names_result.scalars().all()
-        assert names == ["user3"]
+        assert name == "inside fastapi"

@@ -33,6 +33,8 @@ test = [
   "sqlalchemy[asyncio]",
   "aiosqlite",
   "fastapi",
+  "httpx",
+  "python-multipart",
 ]
 dev = ["hatchling", "twine", "build", "ipython"]
 

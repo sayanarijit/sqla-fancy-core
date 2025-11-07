@@ -123,7 +123,7 @@ engine = sa.create_engine("sqlite:///:memory:")
 fancy_engine = fancy(engine)
 
 def get_data(conn: sa.Connection | None = None):
-    return fancy_engine.tx(conn, sa.text("SELECT 1")).scalar_one()
+    return fancy_engine.tx(conn, sa.select(sa.literal(1))).scalar_one()
 
 # Without an explicit transaction
 assert get_data() == 1
@@ -145,8 +145,8 @@ async def main():
     fancy_engine = fancy(engine)
 
     async def get_data(conn: sa.AsyncConnection | None = None):
-        result = await fancy_engine.x(conn, sa.text("SELECT 1"))
-        return await result.scalar_one()
+        result = await fancy_engine.x(conn, sa.select(sa.literal(1)))
+        return result.scalar_one()
 
     # Without an explicit transaction
     assert await get_data() == 1
@@ -156,51 +156,159 @@ async def main():
         assert await get_data(conn) == 1
 ```
 
-## Transaction Decorator
+## Decorators: Inject, connect, transact
 
-The `@transact` decorator further simplifies transaction management. It wraps a function and ensures that it runs within a transaction. The decorator provides a connection object as the argument typed as `Connection` or `AsyncConnection`.
+When writing plain SQLAlchemy Core code, you often pass connections around and manage transactions manually. The decorators in `sqla-fancy-core` help you keep functions connection-agnostic and composable, while remaining explicit and safe.
 
-**Sync Example:**
+At the heart of it is `Inject(engine)`, a tiny marker used as a default parameter value to tell decorators where to inject a connection.
+
+- `Inject(engine)`: marks which parameter should receive a connection derived from the given engine.
+- `@connect`: ensures the injected parameter is a live connection. If you passed a connection explicitly, it will use that one as-is. Otherwise, it will open a new connection for the call and close it afterwards. No transaction is created by default.
+- `@transact`: ensures the injected parameter is inside a transaction. If you pass a connection already in a transaction, it reuses it; if you pass a connection outside a transaction, it starts one; if you pass nothing, it opens a new connection and begins a transaction for the duration of the call.
+
+All three work both for sync and async engines. The signatures remain the same — you only change the default value to `Inject(engine)`.
+
+### Quick reference
+
+- Prefer `@connect` for read-only operations or when you want to control commit/rollback yourself.
+- Prefer `@transact` to wrap a function in a transaction automatically and consistently.
+- You can still pass `conn=...` explicitly to either decorator to reuse an existing connection/transaction.
+
+### Sync examples
 
 ```python
 import sqlalchemy as sa
-from sqla_fancy_core import transact
+from sqla_fancy_core.decorators import Inject, connect, transact
 
 engine = sa.create_engine("sqlite:///:memory:")
+metadata = sa.MetaData()
+users = sa.Table(
+    "users",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("name", sa.String),
+)
+metadata.create_all(engine)
 
-@transact(engine)
-def create_user(conn: sa.Connection, name: str):
-    return conn.execute(sa.text(f"INSERT INTO users (name) VALUES ('{name}')"))
+# 1) Ensure a connection is available (no implicit transaction)
+@connect
+def get_user_count(conn=Inject(engine)):
+    return conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
 
-# This will run in a transaction
-create_user("John Doe")
+assert get_user_count() == 0
 
-# This will also run in the scoped transaction
-with engine.begin() as conn:
-    create_user(conn, "Jane Doe")
+# 2) Wrap in a transaction automatically
+@transact
+def create_user(name: str, conn=Inject(engine)):
+    conn.execute(sa.insert(users).values(name=name))
+
+create_user("alice")
+assert get_user_count() == 1
+
+# 3) Reuse an explicit connection or transaction
+with engine.begin() as txn:
+    create_user("bob", conn=txn)
+    assert get_user_count(conn=txn) == 2
+
+assert get_user_count() == 2
 ```
 
-**Async Example:**
+### Async examples
 
 ```python
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqla_fancy_core import transact
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
+from sqla_fancy_core.decorators import Inject, connect, transact
 
-async def main():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+metadata = sa.MetaData()
+users = sa.Table(
+    "users",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("name", sa.String),
+)
 
-    @transact(engine)
-    async def create_user(conn: sa.AsyncConnection, name: str):
-        return await conn.execute(sa.text(f"INSERT INTO users (name) VALUES ('{name}')"))
+async with engine.begin() as conn:
+    await conn.run_sync(metadata.create_all)
 
-    # This will run in a transaction
-    await create_user("John Doe")
+@connect
+async def get_user_count(conn=Inject(engine)):
+    result = await conn.execute(sa.select(sa.func.count()).select_from(users))
+    return result.scalar_one()
 
-    # This will also run in the scoped transaction
-    async with engine.begin() as conn:
-        await create_user(conn, "Jane Doe")
+@transact
+async def create_user(name: str, conn=Inject(engine)):
+    await conn.execute(sa.insert(users).values(name=name))
+
+assert await get_user_count() == 0
+await create_user("carol")
+assert await get_user_count() == 1
+
+async with engine.connect() as conn:
+    await create_user("dave", conn=conn)
+    assert await get_user_count(conn=conn) == 2
 ```
+
+### Works with dependency injection frameworks
+
+These decorators pair nicely with frameworks like FastAPI. You can keep a single function that works both inside DI (with an injected connection) and outside it (self-managed).
+
+Sync example with FastAPI:
+
+```python
+from typing import Annotated
+from fastapi import Depends, FastAPI, Form
+import sqlalchemy as sa
+from sqla_fancy_core.decorators import Inject, transact
+
+app = FastAPI()
+
+def get_transaction():
+    with engine.begin() as conn:
+        yield conn
+
+@transact
+@app.post("/create-user")
+def create_user(
+    name: Annotated[str, Form(...)],
+    conn: Annotated[sa.Connection, Depends(get_transaction)] = Inject(engine),
+):
+    conn.execute(sa.insert(users).values(name=name))
+
+# Works outside FastAPI too — starts its own transaction
+create_user(name="outside fastapi")
+```
+
+Async example with FastAPI:
+
+```python
+from typing import Annotated
+from fastapi import Depends, FastAPI, Form
+from sqlalchemy.ext.asyncio import AsyncConnection
+import sqlalchemy as sa
+from sqla_fancy_core.decorators import Inject, transact
+
+app = FastAPI()
+
+async def get_transaction():
+    async with engine.begin() as conn:
+        yield conn
+
+@transact
+@app.post("/create-user")
+async def create_user(
+    name: Annotated[str, Form(...)],
+    conn: Annotated[AsyncConnection, Depends(get_transaction)] = Inject(engine),
+):
+    await conn.execute(sa.insert(users).values(name=name))
+```
+
+Notes:
+
+- `@connect` never starts a transaction by itself; `@transact` ensures one.
+- Passing an explicit `conn` always wins — the decorators simply adapt to what you give them.
+- The injection marker keeps your function signatures clean and type-checker friendly.
 
 ## With Pydantic Validation
 
@@ -260,4 +368,3 @@ Production. For folks who prefer query maker over ORM, looking for a robust sync
 **Raw string queries with placeholders**: sacrifices code readability, and prone to sql injection if one forgets to use placeholders.
 
 **Other ORMs**: They are full blown ORMs, not query makers.
-
