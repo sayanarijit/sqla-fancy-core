@@ -7,7 +7,9 @@ from typing import Union, overload
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-EngineType = Union[sa.Engine, AsyncEngine]
+from sqla_fancy_core.wrappers import AsyncFancyEngineWrapper, FancyEngineWrapper
+
+EngineType = Union[sa.Engine, AsyncEngine, FancyEngineWrapper, AsyncFancyEngineWrapper]
 
 
 class _Injectable:
@@ -16,9 +18,9 @@ class _Injectable:
 
 
 @overload
-def Inject(engine: sa.Engine) -> sa.Connection: ...
+def Inject(engine: Union[sa.Engine, FancyEngineWrapper]) -> sa.Connection: ...
 @overload
-def Inject(engine: AsyncEngine) -> AsyncConnection: ...
+def Inject(engine: Union[AsyncEngine, AsyncFancyEngineWrapper]) -> AsyncConnection: ...
 def Inject(engine: EngineType):  # type: ignore
     """A marker class for dependency injection."""
     return _Injectable(engine)
@@ -44,7 +46,6 @@ def transact(func):
             create_user(name="existing", conn=conn)
     """
 
-    # Find the parameter with value Inject
     sig = inspect.signature(func)
     inject_param_name = None
     for name, param in sig.parameters.items():
@@ -56,8 +57,21 @@ def transact(func):
     if inject_param_name is None:
         return func  # No injection needed
 
-    engine = sig.parameters[inject_param_name].default.engine
-    is_async = isinstance(engine, AsyncEngine)
+    engine_arg = sig.parameters[inject_param_name].default.engine
+    if isinstance(engine_arg, sa.Engine):
+        is_async = False
+        engine = engine_arg
+    elif isinstance(engine_arg, FancyEngineWrapper):
+        is_async = False
+        engine = engine_arg.engine
+    elif isinstance(engine_arg, AsyncEngine):
+        is_async = True
+        engine = engine_arg
+    elif isinstance(engine_arg, AsyncFancyEngineWrapper):
+        is_async = True
+        engine = engine_arg.engine
+    else:
+        raise TypeError("Unsupported engine type")
 
     if is_async:
 
@@ -70,8 +84,14 @@ def transact(func):
                 else:
                     async with conn.begin():
                         return await func(*args, **kwargs)
+            elif isinstance(conn, sa.Connection):
+                if conn.in_transaction():
+                    return await func(*args, **kwargs)
+                else:
+                    with conn.begin():
+                        return await func(*args, **kwargs)
             else:
-                async with engine.begin() as conn:
+                async with engine.begin() as conn:  # type: ignore
                     kwargs[inject_param_name] = conn
                     return await func(*args, **kwargs)
 
@@ -88,8 +108,10 @@ def transact(func):
                 else:
                     with conn.begin():
                         return func(*args, **kwargs)
+            elif isinstance(conn, AsyncConnection):
+                raise TypeError("AsyncConnection cannot be used in sync function")
             else:
-                with engine.begin() as conn:
+                with engine.begin() as conn:  # type: ignore
                     kwargs[inject_param_name] = conn
                     return func(*args, **kwargs)
 
@@ -116,7 +138,6 @@ def connect(func):
             count = get_user_count(conn)
     """
 
-    # Find the parameter with value Inject
     sig = inspect.signature(func)
     inject_param_name = None
     for name, param in sig.parameters.items():
@@ -128,18 +149,31 @@ def connect(func):
     if inject_param_name is None:
         return func  # No injection needed
 
-    engine = sig.parameters[inject_param_name].default.engine
-    is_async = isinstance(engine, AsyncEngine)
+    engine_arg = sig.parameters[inject_param_name].default.engine
+    if isinstance(engine_arg, sa.Engine):
+        is_async = False
+        engine = engine_arg
+    elif isinstance(engine_arg, FancyEngineWrapper):
+        is_async = False
+        engine = engine_arg.engine
+    elif isinstance(engine_arg, AsyncEngine):
+        is_async = True
+        engine = engine_arg
+    elif isinstance(engine_arg, AsyncFancyEngineWrapper):
+        is_async = True
+        engine = engine_arg.engine
+    else:
+        raise TypeError("Unsupported engine type")
 
     if is_async:
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             conn = kwargs.get(inject_param_name)
-            if isinstance(conn, AsyncConnection):
+            if isinstance(conn, (AsyncConnection, sa.Connection)):
                 return await func(*args, **kwargs)
             else:
-                async with engine.connect() as conn:
+                async with engine.connect() as conn:  # type: ignore
                     kwargs[inject_param_name] = conn
                     return await func(*args, **kwargs)
 
@@ -152,8 +186,10 @@ def connect(func):
             conn = kwargs.get(inject_param_name)
             if isinstance(conn, sa.Connection):
                 return func(*args, **kwargs)
+            elif isinstance(conn, AsyncConnection):
+                raise TypeError("AsyncConnection cannot be used in sync function")
             else:
-                with engine.connect() as conn:
+                with engine.connect() as conn:  # type: ignore
                     kwargs[inject_param_name] = conn
                     return func(*args, **kwargs)
 

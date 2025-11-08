@@ -190,27 +190,24 @@ users = sa.Table(
 )
 metadata.create_all(engine)
 
-# 1) Ensure a connection is available (no implicit transaction)
 @connect
 def get_user_count(conn=Inject(engine)):
     return conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
 
 assert get_user_count() == 0
 
-# 2) Wrap in a transaction automatically
 @transact
 def create_user(name: str, conn=Inject(engine)):
     conn.execute(sa.insert(users).values(name=name))
 
+# Without an explicit transaction
 create_user("alice")
 assert get_user_count() == 1
 
-# 3) Reuse an explicit connection or transaction
+# With an explicit transaction
 with engine.begin() as txn:
     create_user("bob", conn=txn)
     assert get_user_count(conn=txn) == 2
-
-assert get_user_count() == 2
 ```
 
 ### Async examples
@@ -241,10 +238,12 @@ async def get_user_count(conn=Inject(engine)):
 async def create_user(name: str, conn=Inject(engine)):
     await conn.execute(sa.insert(users).values(name=name))
 
+# Without an explicit transaction
 assert await get_user_count() == 0
 await create_user("carol")
 assert await get_user_count() == 1
 
+# With an explicit transaction
 async with engine.connect() as conn:
     await create_user("dave", conn=conn)
     assert await get_user_count(conn=conn) == 2
