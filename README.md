@@ -106,12 +106,17 @@ async with engine.begin() as txn:
 
 ## Fancy Engine Wrappers
 
-`sqla-fancy-core` provides `fancy` engine wrappers that simplify database interactions by automatically managing connections and transactions. The `fancy` function wraps a SQLAlchemy `Engine` or `AsyncEngine` and returns a wrapper object with two primary methods:
+`sqla-fancy-core` provides `fancy` engine wrappers that simplify database interactions by automatically managing connections and transactions. The `fancy` function wraps a SQLAlchemy `Engine` or `AsyncEngine` and returns a wrapper object with the following methods:
 
 - `x(conn, query)`: Executes a query. It uses the provided `conn` if available, otherwise it creates a new connection.
-- `tx(conn, query)`: Executes a query within a transaction. It uses the provided `conn` if available, otherwise it creates a new connection and begins a transaction.
+- `tx(conn, query)`: Executes a query within a transaction. It uses the provided `conn` if available, otherwise it tries to use the atomic context if within one, else creates a new connection and begins a transaction.
+- `atomic()`: A context manager for grouping multiple operations in a single transaction scope.
+- `ax(query)`: Executes a query using the connection from the active `atomic()` context. Raises `AtomicContextError` if called outside an `atomic()` block.
+- `atx(query)`: Executes a query inside a transaction automatically. If already inside `atomic()`, it reuses the same connection and transaction; otherwise it opens a new transaction just for this call.
 
 This is particularly useful for writing connection-agnostic query functions.
+
+### Basic Examples
 
 **Sync Example:**
 
@@ -155,6 +160,78 @@ async def main():
     async with engine.connect() as conn:
         assert await get_data(conn) == 1
 ```
+
+### Using the atomic() Context Manager
+
+The `atomic()` context manager lets you group several database operations within one transactional scope. Queries executed with `ax()` inside this context all use the same connection. Nested `atomic()` contexts reuse the outer connection automatically.
+
+**Sync Example:**
+
+```python
+import sqlalchemy as sa
+from sqla_fancy_core import fancy, TableFactory
+
+tf = TableFactory()
+
+class User:
+    id = tf.auto_id()
+    name = tf.string("name")
+    Table = tf("users")
+
+engine = sa.create_engine("sqlite:///:memory:")
+tf.metadata.create_all(engine)
+fancy_engine = fancy(engine)
+
+# Group operations in one transaction
+with fancy_engine.atomic():
+    fancy_engine.ax(sa.insert(User.Table).values(name="Alice"))
+    fancy_engine.ax(sa.insert(User.Table).values(name="Bob"))
+    result = fancy_engine.ax(sa.select(sa.func.count()).select_from(User.Table))
+    count = result.scalar_one()
+    assert count == 2
+```
+
+**Async Example:**
+
+```python
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqla_fancy_core import fancy, TableFactory
+
+tf = TableFactory()
+
+class User:
+    id = tf.auto_id()
+    name = tf.string("name")
+    Table = tf("users")
+
+async def run_example():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(tf.metadata.create_all)
+
+    fancy_engine = fancy(engine)
+
+    async with fancy_engine.atomic():
+        await fancy_engine.ax(sa.insert(User.Table).values(name="Alice"))
+        await fancy_engine.ax(sa.insert(User.Table).values(name="Bob"))
+        result = await fancy_engine.ax(sa.select(sa.func.count()).select_from(User.Table))
+        count = result.scalar_one()
+        assert count == 2
+```
+
+**Key Points:**
+
+- `ax()` must be called inside an `atomic()` context. Calling it elsewhere raises `AtomicContextError`.
+- `atx()` is a safe/ergonomic helper: it will run inside the current `atomic()` transaction when present, or create a short-lived transaction otherwise.
+- Nesting `atomic()` contexts is safe. Inner contexts share the outer connection instead of creating a new transaction.
+- On normal exit, the transaction commits automatically. On exception, it rolls back.
+
+### ax vs atx vs tx
+
+- `ax(q)`: Only valid inside `atomic()`. Uses the ambient transactional connection. Great for batch operations grouped by an outer context.
+- `atx(q)`: Fire-and-forget in a transaction. Reuses the ambient `atomic()` connection if present; otherwise starts and commits its own transaction.
+- `tx(conn, q)`: Low-level primitive. If `conn` is provided, it executes within it, creating a transaction when needed; if `None`, it prefers the `atomic()` connection when active or opens a new transactional connection.
 
 ## Decorators: Inject, connect, transact
 
