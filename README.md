@@ -14,9 +14,7 @@ A collection of type-safe, async friendly, and un-opinionated enhancements to SQ
 
 ## Table factory
 
-Define tables with static column references## Target audience
-
-For production use by developers who prefer query builders over ORMs, need robust sync/async support, and want type-safe, readable code.
+Define tables with static column references
 
 **Example:**
 
