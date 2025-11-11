@@ -5,6 +5,7 @@ import pytest_asyncio
 import sqlalchemy as sa
 from fastapi import Form
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from sqla_fancy_core.decorators import Inject, transact
 
@@ -24,7 +25,7 @@ def sync_engine():
     engine = sa.create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
-        poolclass=sa.pool.StaticPool,
+        poolclass=StaticPool,
     )
     metadata.create_all(engine)
     yield engine

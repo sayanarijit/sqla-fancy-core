@@ -206,12 +206,17 @@ class FancyEngineWrapper:
         execution_options: Optional[CoreExecuteOptionsParameter] = None,
     ) -> CursorResult[Any]:
         """If within an atomic context, execute the query there; else, create a new transaction."""
-        return self.tx(
-            self._ATOMIC_TX_CONN.get(),
-            statement,
-            parameters,
-            execution_options=execution_options,
-        )
+
+        conn = self._ATOMIC_TX_CONN.get()
+        if conn:
+            return conn.execute(
+                statement, parameters, execution_options=execution_options
+            )
+        else:
+            with self.engine.begin() as conn:
+                return conn.execute(
+                    statement, parameters, execution_options=execution_options
+                )
 
 
 class AsyncFancyEngineWrapper:
@@ -385,12 +390,17 @@ class AsyncFancyEngineWrapper:
         execution_options: Optional[CoreExecuteOptionsParameter] = None,
     ) -> CursorResult[Any]:
         """If within an atomic context, execute the query there; else, create a new transaction."""
-        return await self.tx(
-            self._ATOMIC_TX_CONN.get(),
-            statement,
-            parameters,
-            execution_options=execution_options,
-        )
+
+        connection = self._ATOMIC_TX_CONN.get()
+        if connection:
+            return await connection.execute(
+                statement, parameters, execution_options=execution_options
+            )
+        else:
+            async with self.engine.begin() as connection:
+                return await connection.execute(
+                    statement, parameters, execution_options=execution_options
+                )
 
 
 @overload

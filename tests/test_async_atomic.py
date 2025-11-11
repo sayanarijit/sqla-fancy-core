@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqla_fancy_core import TableFactory, fancy
 from sqla_fancy_core.wrappers import AtomicContextError
 
-
 tf = TableFactory()
 
 

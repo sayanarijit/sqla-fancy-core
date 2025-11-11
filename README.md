@@ -1,16 +1,26 @@
 # sqla-fancy-core
 
-There are plenty of ORMs to choose from in Python world, but not many sql query makers for folks who prefer to stay close to the original SQL syntax, without sacrificing security and code readability. The closest, most mature and most flexible query maker you can find is SQLAlchemy core.
+A collection of type-safe, async friendly, and un-opinionated enhancements to SQLAlchemy Core that works well with mordern web servers.
 
-But the syntax of defining tables and making queries has a lot of scope for improvement. For example, the `table.c.column` syntax is too dynamic, unreadable, and probably has performance impact too. It also doesn’t play along with static type checkers and linting tools.
+**Why?**
 
-So here I present one attempt at getting the best out of SQLAlchemy core by changing the way we define tables.
+- ORMs are magical, but it's not always a feature. Sometimes, we crave for familiar.
+- SQLAlchemy Core is powerful but `table.c.column` breaks static type checking and has runtime overhead. This library provides a better way to define tables while keeping all of SQLAlchemy's flexibility. See [Table Factory](#table-factory).
+- The idea of sessions can get feel too magical and opinionated. This library removes the magic and opinions and takes you to back to familiar transactions's territory, providing multiple un-opinionated APIs to deal with it. See [Wrappers](#fancy-engine-wrappers) and [Decorators](#decorators-inject-connect-transact).
 
-The table factory class it exposes, helps define tables in a way that eliminates the above drawbacks. Moreover, you can subclass it to add your preferred global defaults for columns (e.g. not null as default). Or specify custom column types with consistent naming (e.g. created_at).
+**Demos:**
 
-## Basic Usage
+- [FastAPI - sqla-fancy-core example app](https://github.com/sayanarijit/fastapi-sqla-fancy-core-example-app).
 
-First, let's define a table using the `TableFactory`.
+## Table factory
+
+Define tables with static column references## Target audience
+
+For production use by developers who prefer query builders over ORMs, need robust sync/async support, and want type-safe, readable code.
+
+**Example:**
+
+Define tables:
 
 ```python
 import sqlalchemy as sa
@@ -27,7 +37,7 @@ class Author:
     Table = tf("author")
 ```
 
-The `TableFactory` provides a convenient way to define columns with common attributes. For more complex scenarios, you can define tables without losing type hints:
+For complex scenarios, define columns explicitly:
 
 ```python
 class Book:
@@ -55,7 +65,7 @@ class Book:
     Table = tf(sa.Table("book", sa.MetaData()))
 ```
 
-Now, let's create an engine and the tables.
+Create tables:
 
 ```python
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -68,11 +78,7 @@ async with engine.begin() as conn:
     await conn.run_sync(tf.metadata.create_all)
 ```
 
-With the tables created, you can perform CRUD operations.
-
-### CRUD Operations
-
-Here's how you can interact with the database using the defined tables.
+Perform CRUD operations:
 
 ```python
 async with engine.begin() as txn:
@@ -106,15 +112,13 @@ async with engine.begin() as txn:
 
 ## Fancy Engine Wrappers
 
-`sqla-fancy-core` provides `fancy` engine wrappers that simplify database interactions by automatically managing connections and transactions. The `fancy` function wraps a SQLAlchemy `Engine` or `AsyncEngine` and returns a wrapper object with the following methods:
+Simplify connection and transaction management. The `fancy()` function wraps a SQLAlchemy engine and provides:
 
-- `x(conn, query)`: Executes a query. It uses the provided `conn` if available, otherwise it creates a new connection.
-- `tx(conn, query)`: Executes a query within a transaction. It uses the provided `conn` if available, otherwise it tries to use the atomic context if within one, else creates a new connection and begins a transaction.
-- `atomic()`: A context manager for grouping multiple operations in a single transaction scope.
-- `ax(query)`: Executes a query using the connection from the active `atomic()` context. Raises `AtomicContextError` if called outside an `atomic()` block.
-- `atx(query)`: Executes a query inside a transaction automatically. If already inside `atomic()`, it reuses the same connection and transaction; otherwise it opens a new transaction just for this call.
-
-This is particularly useful for writing connection-agnostic query functions.
+- `x(conn, query)`: Execute query with optional connection
+- `tx(conn, query)`: Execute query in transaction
+- `atomic()`: Context manager for transaction scope
+- `ax(query)`: Execute inside `atomic()` context (raises `AtomicContextError` outside)
+- `atx(query)`: Auto-transactional (reuses `atomic()` if present, or creates new transaction)
 
 ### Basic Examples
 
@@ -163,7 +167,7 @@ async def main():
 
 ### Using the atomic() Context Manager
 
-The `atomic()` context manager lets you group several database operations within one transactional scope. Queries executed with `ax()` inside this context all use the same connection. Nested `atomic()` contexts reuse the outer connection automatically.
+Group operations in a single transaction. Nested `atomic()` contexts share the outer connection.
 
 **Sync Example:**
 
@@ -222,34 +226,28 @@ async def run_example():
 
 **Key Points:**
 
-- `ax()` must be called inside an `atomic()` context. Calling it elsewhere raises `AtomicContextError`.
-- `atx()` is a safe/ergonomic helper: it will run inside the current `atomic()` transaction when present, or create a short-lived transaction otherwise.
-- Nesting `atomic()` contexts is safe. Inner contexts share the outer connection instead of creating a new transaction.
-- On normal exit, the transaction commits automatically. On exception, it rolls back.
+- `ax()` requires `atomic()` context
+- `atx()` auto-manages transactions (safe inside or outside `atomic()`)
+- Nested `atomic()` contexts share connections
+- Auto-commit on success, auto-rollback on exception
 
 ### ax vs atx vs tx
 
-- `ax(q)`: Only valid inside `atomic()`. Uses the ambient transactional connection. Great for batch operations grouped by an outer context.
-- `atx(q)`: Fire-and-forget in a transaction. Reuses the ambient `atomic()` connection if present; otherwise starts and commits its own transaction.
-- `tx(conn, q)`: Low-level primitive. If `conn` is provided, it executes within it, creating a transaction when needed; if `None`, it prefers the `atomic()` connection when active or opens a new transactional connection.
+- `ax(q)`: Requires `atomic()` context. For batch operations.
+- `atx(q)`: Fire-and-forget with transaction. Reuses outer `atomic()` context if any, or creates new transaction.
+- `tx(conn, q)`: Low-level. Uses provided `conn`, or outer `atomic()` context if any, or creates new transactional connection.
 
 ## Decorators: Inject, connect, transact
 
-When writing plain SQLAlchemy Core code, you often pass connections around and manage transactions manually. The decorators in `sqla-fancy-core` help you keep functions connection-agnostic and composable, while remaining explicit and safe.
+Keep functions connection-agnostic with decorator-based injection.
 
-At the heart of it is `Inject(engine)`, a tiny marker used as a default parameter value to tell decorators where to inject a connection.
+**Components:**
 
-- `Inject(engine)`: marks which parameter should receive a connection derived from the given engine.
-- `@connect`: ensures the injected parameter is a live connection. If you passed a connection explicitly, it will use that one as-is. Otherwise, it will open a new connection for the call and close it afterwards. No transaction is created by default.
-- `@transact`: ensures the injected parameter is inside a transaction. If you pass a connection already in a transaction, it reuses it; if you pass a connection outside a transaction, it starts one; if you pass nothing, it opens a new connection and begins a transaction for the duration of the call.
+- `Inject(engine)`: Marks parameter for connection injection
+- `@connect`: Ensures live connection (no transaction by default)
+- `@transact`: Ensures transactional connection
 
-All three work both for sync and async engines. The signatures remain the same — you only change the default value to `Inject(engine)`.
-
-### Quick reference
-
-- Prefer `@connect` for read-only operations or when you want to control commit/rollback yourself.
-- Prefer `@transact` to wrap a function in a transaction automatically and consistently.
-- You can still pass `conn=...` explicitly to either decorator to reuse an existing connection/transaction.
+Use `@connect` for read-only operations. Use `@transact` for writes.
 
 ### Sync examples
 
@@ -326,11 +324,7 @@ async with engine.connect() as conn:
     assert await get_user_count(conn=conn) == 2
 ```
 
-### Works with dependency injection frameworks
-
-These decorators pair nicely with frameworks like FastAPI. You can keep a single function that works both inside DI (with an injected connection) and outside it (self-managed).
-
-Sync example with FastAPI:
+Works with dependency injection frameworks like FastAPI:
 
 ```python
 from typing import Annotated
@@ -356,7 +350,7 @@ def create_user(
 create_user(name="outside fastapi")
 ```
 
-Async example with FastAPI:
+Async with FastAPI:
 
 ```python
 from typing import Annotated
@@ -380,15 +374,9 @@ async def create_user(
     await conn.execute(sa.insert(users).values(name=name))
 ```
 
-Notes:
-
-- `@connect` never starts a transaction by itself; `@transact` ensures one.
-- Passing an explicit `conn` always wins — the decorators simply adapt to what you give them.
-- The injection marker keeps your function signatures clean and type-checker friendly.
-
 ## With Pydantic Validation
 
-You can integrate `sqla-fancy-core` with Pydantic for data validation.
+Integrate with Pydantic for validation:
 
 ```python
 from typing import Any
