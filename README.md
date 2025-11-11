@@ -224,19 +224,6 @@ async def run_example():
         assert count == 2
 ```
 
-**Key Points:**
-
-- `ax()` requires `atomic()` context
-- `atx()` auto-manages transactions (safe inside or outside `atomic()`)
-- Nested `atomic()` contexts share connections
-- Auto-commit on success, auto-rollback on exception
-
-### ax vs atx vs tx
-
-- `ax(q)`: Requires `atomic()` context. For batch operations.
-- `atx(q)`: Fire-and-forget with transaction. Reuses outer `atomic()` context if any, or creates new transaction.
-- `tx(conn, q)`: Low-level. Uses provided `conn`, or outer `atomic()` context if any, or creates new transactional connection.
-
 ## Decorators: Inject, connect, transact
 
 Keep functions connection-agnostic with decorator-based injection.
