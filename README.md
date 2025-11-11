@@ -6,7 +6,7 @@ A collection of type-safe, async friendly, and un-opinionated enhancements to SQ
 
 - ORMs are magical, but it's not always a feature. Sometimes, we crave for familiar.
 - SQLAlchemy Core is powerful but `table.c.column` breaks static type checking and has runtime overhead. This library provides a better way to define tables while keeping all of SQLAlchemy's flexibility. See [Table Factory](#table-factory).
-- The idea of sessions can get feel too magical and opinionated. This library removes the magic and opinions and takes you to back to familiar transactions's territory, providing multiple un-opinionated APIs to deal with it. See [Wrappers](#fancy-engine-wrappers) and [Decorators](#decorators-inject-connect-transact).
+- The idea of sessions can feel too magical and opinionated. This library removes the magic and opinions and takes you to back to familiar transactions's territory, providing multiple un-opinionated APIs to deal with it. See [Wrappers](#fancy-engine-wrappers) and [Decorators](#decorators-inject-connect-transact).
 
 **Demos:**
 
