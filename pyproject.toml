@@ -1,6 +1,6 @@
 [project]
 name = 'sqla-fancy-core'
-version = '1.2.2'
+version = '1.2.3'
 description = 'SQLAlchemy core, but fancier'
 readme = 'README.md'
 requires-python = ">=3.7"
