@@ -1,11 +1,20 @@
 [project]
 name = 'sqla-fancy-core'
 version = '1.2.3'
-description = 'SQLAlchemy core, but fancier'
+description = 'A collection of type-safe, async friendly, and un-opinionated enhancements to SQLAlchemy Core that works well with mordern web servers.'
 readme = 'README.md'
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
-keywords = ["sql", "sqlalchemy", "sqlalchemy-core"]
+keywords = [
+  "sql",
+  "sqlalchemy",
+  "database",
+  "async",
+  "type-safe",
+  "orm",
+  "web",
+  "fastapi",
+]
 authors = [{ name = "Arijit Basu", email = "sayanarijit@gmail.com" }]
 maintainers = [{ name = "Arijit Basu", email = "sayanarijit@gmail.com" }]
 classifiers = [
