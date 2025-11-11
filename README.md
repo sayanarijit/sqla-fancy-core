@@ -157,10 +157,10 @@ async def main():
         result = await fancy_engine.x(conn, sa.select(sa.literal(1)))
         return result.scalar_one()
 
-    # Without an explicit transaction
+    # Without an explicit connection
     assert await get_data() == 1
 
-    # With an explicit transaction
+    # With an explicit connection
     async with engine.connect() as conn:
         assert await get_data(conn) == 1
 ```
