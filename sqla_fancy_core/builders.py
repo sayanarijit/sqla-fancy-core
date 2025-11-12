@@ -9,7 +9,7 @@ class TableBuilder:
     """A builder for creating SQLAlchemy columns with default values."""
 
     def __init__(self, metadata: Optional[sa.MetaData] = None):
-        """Initialize the factory with default values."""
+        """Initialize the builder with default values."""
         if metadata is None:
             self.metadata = sa.MetaData()
         else:
