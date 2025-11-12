@@ -144,14 +144,14 @@ with engine.begin() as conn:
 
 ```python
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
 from sqla_fancy_core import fancy
 
 async def main():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     fancy_engine = fancy(engine)
 
-    async def get_data(conn: sa.AsyncConnection | None = None):
+    async def get_data(conn: AsyncConnection | None = None):
         result = await fancy_engine.x(conn, sa.select(sa.literal(1)))
         return result.scalar_one()
 
