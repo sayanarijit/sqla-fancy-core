@@ -3,14 +3,14 @@ import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from sqla_fancy_core import TableFactory, fancy
+from sqla_fancy_core import TableBuilder, fancy
 
-tf = TableFactory()
+tb = TableBuilder()
 
 
 class Counter:
-    id = tf.auto_id()
-    Table = tf("counter")
+    id = tb.auto_id()
+    Table = tb("counter")
 
 
 q_insert = sa.insert(Counter.Table)
@@ -21,10 +21,10 @@ q_count = sa.select(sa.func.count()).select_from(Counter.Table)
 async def fancy_engine():
     fancy_engine = fancy(create_async_engine("sqlite+aiosqlite:///:memory:"))
     async with fancy_engine.engine.begin() as conn:
-        await conn.run_sync(tf.metadata.create_all)
+        await conn.run_sync(tb.metadata.create_all)
     yield fancy_engine
     async with fancy_engine.engine.begin() as conn:
-        await conn.run_sync(tf.metadata.drop_all)
+        await conn.run_sync(tb.metadata.drop_all)
     await fancy_engine.engine.dispose()
 
 

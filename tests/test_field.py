@@ -9,20 +9,20 @@ def test_field():
     import sqlalchemy as sa
     from pydantic import BaseModel, Field
 
-    from sqla_fancy_core import TableFactory
+    from sqla_fancy_core import TableBuilder
 
-    tf = TableFactory()
+    tb = TableBuilder()
 
     def field(col, default: Any = ...) -> Field:
         return col.info["kwargs"]["field"](default)
 
     # Define a table
     class User:
-        name = tf(
+        name = tb(
             sa.Column("name", sa.String),
             field=lambda default: Field(default, max_length=5),
         )
-        Table = tf("author")
+        Table = tb("author")
 
     # Define a pydantic schema
     class CreateUser(BaseModel):

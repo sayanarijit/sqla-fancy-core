@@ -5,14 +5,14 @@ A collection of type-safe, async friendly, and un-opinionated enhancements to SQ
 **Why?**
 
 - ORMs are magical, but it's not always a feature. Sometimes, we crave for familiar.
-- SQLAlchemy Core is powerful but `table.c.column` breaks static type checking and has runtime overhead. This library provides a better way to define tables while keeping all of SQLAlchemy's flexibility. See [Table Factory](#table-factory).
+- SQLAlchemy Core is powerful but `table.c.column` breaks static type checking and has runtime overhead. This library provides a better way to define tables while keeping all of SQLAlchemy's flexibility. See [Table Builder](#table-builder).
 - The idea of sessions can feel too magical and opinionated. This library removes the magic and opinions and takes you to back to familiar transactions's territory, providing multiple un-opinionated APIs to deal with it. See [Wrappers](#fancy-engine-wrappers) and [Decorators](#decorators-inject-connect-transact).
 
 **Demos:**
 
 - [FastAPI - sqla-fancy-core example app](https://github.com/sayanarijit/fastapi-sqla-fancy-core-example-app).
 
-## Table factory
+## Table builder
 
 Define tables with static column references
 
@@ -22,27 +22,27 @@ Define tables:
 
 ```python
 import sqlalchemy as sa
-from sqla_fancy_core import TableFactory
+from sqla_fancy_core import TableBuilder
 
-tf = TableFactory()
+tb = TableBuilder()
 
 class Author:
-    id = tf.auto_id()
-    name = tf.string("name")
-    created_at = tf.created_at()
-    updated_at = tf.updated_at()
+    id = tb.auto_id()
+    name = tb.string("name")
+    created_at = tb.created_at()
+    updated_at = tb.updated_at()
 
-    Table = tf("author")
+    Table = tb("author")
 ```
 
 For complex scenarios, define columns explicitly:
 
 ```python
 class Book:
-    id = tf(sa.Column("id", sa.Integer, primary_key=True, autoincrement=True))
-    title = tf(sa.Column("title", sa.String(255), nullable=False))
-    author_id = tf(sa.Column("author_id", sa.Integer, sa.ForeignKey(Author.id)))
-    created_at = tf(
+    id = tb(sa.Column("id", sa.Integer, primary_key=True, autoincrement=True))
+    title = tb(sa.Column("title", sa.String(255), nullable=False))
+    author_id = tb(sa.Column("author_id", sa.Integer, sa.ForeignKey(Author.id)))
+    created_at = tb(
         sa.Column(
             "created_at",
             sa.DateTime,
@@ -50,7 +50,7 @@ class Book:
             server_default=sa.func.now(),
         )
     )
-    updated_at = tf(
+    updated_at = tb(
         sa.Column(
             "updated_at",
             sa.DateTime,
@@ -60,7 +60,7 @@ class Book:
         )
     )
 
-    Table = tf(sa.Table("book", sa.MetaData()))
+    Table = tb(sa.Table("book", sa.MetaData()))
 ```
 
 Create tables:
@@ -73,7 +73,7 @@ engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 
 # Create the tables
 async with engine.begin() as conn:
-    await conn.run_sync(tf.metadata.create_all)
+    await conn.run_sync(tb.metadata.create_all)
 ```
 
 Perform CRUD operations:
@@ -113,7 +113,7 @@ async with engine.begin() as txn:
 Simplify connection and transaction management. The `fancy()` function wraps a SQLAlchemy engine and provides:
 
 - `x(conn, query)`: Execute query with optional connection
-- `tx(conn, query)`: Execute query in transaction
+- `tx(conn, query)`: Execute query in transaction, uses the given connection if present
 - `atomic()`: Context manager for transaction scope
 - `ax(query)`: Execute inside `atomic()` context (raises `AtomicContextError` outside)
 - `atx(query)`: Auto-transactional (reuses `atomic()` if present, or creates new transaction)
@@ -165,23 +165,23 @@ async def main():
 
 ### Using the atomic() Context Manager
 
-Group operations in a single transaction. Nested `atomic()` contexts share the outer connection.
+Group operations in a single transaction without passing around the Connection/AsyncConnection instance. Nested `atomic()` contexts share the outer connection.
 
 **Sync Example:**
 
 ```python
 import sqlalchemy as sa
-from sqla_fancy_core import fancy, TableFactory
+from sqla_fancy_core import fancy, TableBuilder
 
-tf = TableFactory()
+tb = TableBuilder()
 
 class User:
-    id = tf.auto_id()
-    name = tf.string("name")
-    Table = tf("users")
+    id = tb.auto_id()
+    name = tb.string("name")
+    Table = tb("users")
 
 engine = sa.create_engine("sqlite:///:memory:")
-tf.metadata.create_all(engine)
+tb.metadata.create_all(engine)
 fancy_engine = fancy(engine)
 
 # Group operations in one transaction
@@ -198,19 +198,19 @@ with fancy_engine.atomic():
 ```python
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqla_fancy_core import fancy, TableFactory
+from sqla_fancy_core import fancy, TableBuilder
 
-tf = TableFactory()
+tb = TableBuilder()
 
 class User:
-    id = tf.auto_id()
-    name = tf.string("name")
-    Table = tf("users")
+    id = tb.auto_id()
+    name = tb.string("name")
+    Table = tb("users")
 
-async def run_example():
+async def main():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-        await conn.run_sync(tf.metadata.create_all)
+    await conn.run_sync(tb.metadata.create_all)
 
     fancy_engine = fancy(engine)
 
@@ -309,7 +309,7 @@ async with engine.connect() as conn:
     assert await get_user_count(conn=conn) == 2
 ```
 
-Works with dependency injection frameworks like FastAPI:
+Also works with dependency injection frameworks like FastAPI:
 
 ```python
 from typing import Annotated
@@ -361,7 +361,7 @@ async def create_user(
 
 ## With Pydantic Validation
 
-Integrate with Pydantic for validation:
+If you like to define validation logic in the column itself, this is one way to do it:
 
 ```python
 from typing import Any
@@ -369,20 +369,20 @@ import sqlalchemy as sa
 from pydantic import BaseModel, Field
 import pytest
 
-from sqla_fancy_core import TableFactory
+from sqla_fancy_core import TableBuilder
 
-tf = TableFactory()
+tb = TableBuilder()
 
 def field(col, default: Any = ...) -> Field:
     return col.info["kwargs"]["field"](default)
 
 # Define a table
 class User:
-    name = tf(
+    name = tb(
         sa.Column("name", sa.String),
         field=lambda default: Field(default, max_length=5),
     )
-    Table = tf("author")
+    Table = tb("author")
 
 # Define a pydantic schema
 class CreateUser(BaseModel):

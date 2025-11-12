@@ -1,14 +1,14 @@
 import pytest
 import sqlalchemy as sa
 
-from sqla_fancy_core import TableFactory, fancy
+from sqla_fancy_core import TableBuilder, fancy
 
-tf = TableFactory()
+tb = TableBuilder()
 
 
 class Counter:
-    id = tf.auto_id()
-    Table = tf("counter")
+    id = tb.auto_id()
+    Table = tb("counter")
 
 
 q_insert = sa.insert(Counter.Table)
@@ -18,9 +18,9 @@ q_count = sa.select(sa.func.count()).select_from(Counter.Table)
 @pytest.fixture
 def fancy_engine():
     fancy_engine = fancy(sa.create_engine("sqlite:///:memory:"))
-    tf.metadata.create_all(fancy_engine.engine)
+    tb.metadata.create_all(fancy_engine.engine)
     yield fancy_engine
-    tf.metadata.drop_all(fancy_engine.engine)
+    tb.metadata.drop_all(fancy_engine.engine)
     fancy_engine.engine.dispose()
 
 

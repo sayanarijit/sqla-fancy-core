@@ -1,12 +1,12 @@
-"""Some factories for fun times with SQLAlchemy core."""
+"""Some builders for fun times with SQLAlchemy core."""
 
 from typing import Optional, Union, overload
 
 import sqlalchemy as sa
 
 
-class TableFactory:
-    """A factory for creating SQLAlchemy columns with default values."""
+class TableBuilder:
+    """A builder for creating SQLAlchemy columns with default values."""
 
     def __init__(self, metadata: Optional[sa.MetaData] = None):
         """Initialize the factory with default values."""
