@@ -210,7 +210,7 @@ class User:
 async def main():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-    await conn.run_sync(tb.metadata.create_all)
+        await conn.run_sync(tb.metadata.create_all)
 
     fancy_engine = fancy(engine)
 
