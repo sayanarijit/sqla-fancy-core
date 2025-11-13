@@ -7,6 +7,11 @@ from typing import Union, overload
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from sqla_fancy_core.errors import (
+    NotInTransactionError,
+    UnexpectedAsyncConnectionError,
+    UnsupportedEngineTypeError,
+)
 from sqla_fancy_core.wrappers import AsyncFancyEngineWrapper, FancyEngineWrapper
 
 EngineType = Union[sa.Engine, AsyncEngine, FancyEngineWrapper, AsyncFancyEngineWrapper]
@@ -41,8 +46,8 @@ def transact(func):
         # This will create a new transaction
         create_user("test")
 
-        # This will use the existing connection
-        with engine.connect() as conn:
+        # This will use the existing transaction
+        with engine.begin() as conn:
             create_user(name="existing", conn=conn)
     """
 
@@ -71,7 +76,7 @@ def transact(func):
         is_async = True
         engine = engine_arg.engine
     else:
-        raise TypeError("Unsupported engine type")
+        raise UnsupportedEngineTypeError()
 
     if is_async:
 
@@ -82,14 +87,12 @@ def transact(func):
                 if conn.in_transaction():
                     return await func(*args, **kwargs)
                 else:
-                    async with conn.begin():
-                        return await func(*args, **kwargs)
+                    raise NotInTransactionError()
             elif isinstance(conn, sa.Connection):
                 if conn.in_transaction():
                     return await func(*args, **kwargs)
                 else:
-                    with conn.begin():
-                        return await func(*args, **kwargs)
+                    raise NotInTransactionError()
             else:
                 async with engine.begin() as conn:  # type: ignore
                     kwargs[inject_param_name] = conn
@@ -106,10 +109,9 @@ def transact(func):
                 if conn.in_transaction():
                     return func(*args, **kwargs)
                 else:
-                    with conn.begin():
-                        return func(*args, **kwargs)
+                    raise NotInTransactionError()
             elif isinstance(conn, AsyncConnection):
-                raise TypeError("AsyncConnection cannot be used in sync function")
+                raise UnexpectedAsyncConnectionError()
             else:
                 with engine.begin() as conn:  # type: ignore
                     kwargs[inject_param_name] = conn
@@ -163,7 +165,7 @@ def connect(func):
         is_async = True
         engine = engine_arg.engine
     else:
-        raise TypeError("Unsupported engine type")
+        raise UnsupportedEngineTypeError()
 
     if is_async:
 
@@ -187,7 +189,7 @@ def connect(func):
             if isinstance(conn, sa.Connection):
                 return func(*args, **kwargs)
             elif isinstance(conn, AsyncConnection):
-                raise TypeError("AsyncConnection cannot be used in sync function")
+                raise UnexpectedAsyncConnectionError()
             else:
                 with engine.connect() as conn:  # type: ignore
                     kwargs[inject_param_name] = conn

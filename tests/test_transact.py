@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 import sqlalchemy as sa
 from fastapi import Form
-from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from sqla_fancy_core.decorators import Inject, transact
@@ -101,21 +101,30 @@ def test_batch_commit_rollback(sync_engine):
     def create_user(name: str, conn: sa.Connection = Inject(sync_engine)):
         conn.execute(sa.insert(users).values(name=name))
 
-    def batch_add_users(names: list[str]):
-        with sync_engine.begin() as conn:
-            for name in names:
-                create_user(conn=conn, name=name)
-            raise ValueError("Triggering rollback")
+    @transact
+    def batch_add_users(names: list[str], conn: sa.Connection = Inject(sync_engine)):
+        for name in names:
+            create_user(name, conn=conn)
+        raise ValueError("Triggering rollback")
 
-    with sync_engine.begin() as conn:
-        try:
-            batch_add_users(["user1", "user2"])
-        except ValueError:
-            pass
+    try:
+        batch_add_users(["user1", "user2"])
+    except ValueError:
+        pass
+
+    try:
+        with sync_engine.begin() as conn:
+            batch_add_users(["user1", "user2"], conn=conn)
+    except ValueError:
+        pass
+
+    with sync_engine.connect() as conn:
+        count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
+        assert count == 0
 
     create_user("user3")
 
-    with sync_engine.begin() as conn:
+    with sync_engine.connect() as conn:
         count = conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
         assert count == 1
         names = (
@@ -126,7 +135,7 @@ def test_batch_commit_rollback(sync_engine):
 
 #
 @pytest.mark.asyncio
-async def test_decorator_async_commit(async_engine):
+async def test_decorator_async_commit(async_engine: AsyncEngine):
     """Test that the async decorator commits a successful transaction."""
 
     @transact
@@ -166,7 +175,7 @@ async def test_decorator_async_commit(async_engine):
 
 
 @pytest.mark.asyncio
-async def test_decorator_async_rollback(async_engine):
+async def test_decorator_async_rollback(async_engine: AsyncEngine):
     """Test that the async decorator rolls back a failed transaction."""
 
     @transact
@@ -222,7 +231,7 @@ def test_fastapi_dependency_injection(sync_engine):
 
 
 @pytest.mark.asyncio
-async def test_dependency_injection_async(async_engine):
+async def test_dependency_injection_async(async_engine: AsyncEngine):
     """Test that the async decorator works well with dependency injection frameworks."""
 
     from fastapi import Depends, FastAPI, Form

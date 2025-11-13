@@ -4,6 +4,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from sqla_fancy_core import TableBuilder, fancy
+from sqla_fancy_core.wrappers import NotInTransactionError
 
 tb = TableBuilder()
 
@@ -95,3 +96,13 @@ async def test_transaction_context_manager_rollback(fancy_engine):
         pass
     assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
     assert (await fancy_engine.tx(None, q_count)).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_tx_raises_error_on_non_transactional_connection(fancy_engine):
+    """Test that tx() raises NotInTransactionError when connection is not in a transaction."""
+    async with fancy_engine.engine.connect() as conn:
+        # Connection exists but is not in a transaction
+        assert conn.in_transaction() is False
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.tx(conn, q_insert)
