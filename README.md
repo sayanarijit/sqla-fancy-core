@@ -395,12 +395,14 @@ def get_transaction():
         yield conn
 
 @transact
-@app.post("/create-user")
 def create_user(
     name: Annotated[str, Form(...)],
     conn: Annotated[sa.Connection, Depends(get_transaction)] = Inject(engine),
 ):
     conn.execute(sa.insert(users).values(name=name))
+
+# Register route
+app.post("/create-user")(create_user)
 
 # Works outside FastAPI too — starts its own transaction
 create_user(name="outside fastapi")
@@ -428,6 +430,9 @@ async def create_user(
     conn: Annotated[AsyncConnection, Depends(get_transaction)] = Inject(engine),
 ):
     await conn.execute(sa.insert(users).values(name=name))
+
+# Works outside FastAPI too — starts its own transaction
+await create_user(name="outside fastapi")
 ```
 
 ## With Pydantic Validation
