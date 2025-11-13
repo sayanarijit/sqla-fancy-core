@@ -375,7 +375,7 @@ await create_user("carol")
 assert await get_user_count() == 1
 
 # With an explicit transaction
-async with engine.connect() as conn:
+async with engine.begin() as conn:
     await create_user("dave", conn=conn)
     assert await get_user_count(conn=conn) == 2
 ```
