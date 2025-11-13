@@ -110,13 +110,20 @@ async with engine.begin() as txn:
 
 ## Fancy Engine Wrappers
 
-Simplify connection and transaction management. The `fancy()` function wraps a SQLAlchemy engine and provides:
+Simplify running queries with or without explicit connection or transaction. The `fancy()` function wraps a SQLAlchemy engine and provides:
 
-- `x(conn, query)`: Execute query with optional connection
-- `tx(conn, query)`: Execute query in transaction, uses the given connection if present
+### Execute query in transaction
+
+- `tx(conn, query)`: Execute query in optional transaction (reuses `atomic()` context if available, else creates new)
 - `atomic()`: Context manager for transaction scope
 - `ax(query)`: Execute inside `atomic()` context (raises `AtomicContextError` outside)
 - `atx(query)`: Auto-transactional (reuses `atomic()` if present, or creates new transaction)
+
+### Execute query without transaction
+
+- `x(conn, query)`: Execute query with optional connection (reuses `non_atomic()` context if available, else creates new)
+- `non_atomic()`: Context manager for non-transactional connections (allows manual transaction control)
+- `nax(query)`: Execute inside `non_atomic()` context or create a new connection
 
 ### Basic Examples
 
@@ -147,20 +154,19 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
 from sqla_fancy_core import fancy
 
-async def main():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    fancy_engine = fancy(engine)
+engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+fancy_engine = fancy(engine)
 
-    async def get_data(conn: AsyncConnection | None = None):
-        result = await fancy_engine.x(conn, sa.select(sa.literal(1)))
-        return result.scalar_one()
+async def get_data(conn: AsyncConnection | None = None):
+    result = await fancy_engine.x(conn, sa.select(sa.literal(1)))
+    return result.scalar_one()
 
-    # Without an explicit connection
-    assert await get_data() == 1
+# Without an explicit connection
+assert await get_data() == 1
 
-    # With an explicit connection
-    async with engine.connect() as conn:
-        assert await get_data(conn) == 1
+# With an explicit connection
+async with engine.connect() as conn:
+    assert await get_data(conn) == 1
 ```
 
 ### Using the atomic() Context Manager
@@ -207,19 +213,84 @@ class User:
     name = tb.string("name")
     Table = tb("users")
 
-async def main():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(tb.metadata.create_all)
+engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+async with engine.begin() as conn:
+    await conn.run_sync(tb.metadata.create_all)
 
-    fancy_engine = fancy(engine)
+fancy_engine = fancy(engine)
 
-    async with fancy_engine.atomic():
-        await fancy_engine.ax(sa.insert(User.Table).values(name="Alice"))
-        await fancy_engine.ax(sa.insert(User.Table).values(name="Bob"))
-        result = await fancy_engine.ax(sa.select(sa.func.count()).select_from(User.Table))
-        count = result.scalar_one()
-        assert count == 2
+async with fancy_engine.atomic():
+    await fancy_engine.ax(sa.insert(User.Table).values(name="Alice"))
+    await fancy_engine.ax(sa.insert(User.Table).values(name="Bob"))
+    result = await fancy_engine.ax(sa.select(sa.func.count()).select_from(User.Table))
+    count = result.scalar_one()
+    assert count == 2
+```
+
+### Using the non_atomic() Context Manager
+
+For cases where you need manual transaction control or want to perform read operations with connection reuse:
+
+**Sync Example:**
+
+```python
+import sqlalchemy as sa
+from sqla_fancy_core import fancy, TableBuilder
+
+tb = TableBuilder()
+
+class User:
+    id = tb.auto_id()
+    name = tb.string("name")
+    Table = tb("users")
+
+engine = sa.create_engine("sqlite:///:memory:")
+tb.metadata.create_all(engine)
+fancy_engine = fancy(engine)
+
+# Reuse connection without automatic transaction
+with fancy_engine.non_atomic() as conn:
+    # You can start manual transactions if you want
+    with conn.begin():
+        fancy_engine.nax(sa.insert(User.Table).values(name="Alice"))
+        conn.commit()  # Explicit commit
+
+    # Or perform multiple reads with the same connection
+    result1 = fancy_engine.nax(sa.select(User.name).where(User.id == 1))
+    result2 = fancy_engine.nax(sa.select(sa.func.count()).select_from(User.Table))
+```
+
+**Async Example:**
+
+```python
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqla_fancy_core import fancy, TableBuilder
+
+tb = TableBuilder()
+
+class User:
+    id = tb.auto_id()
+    name = tb.string("name")
+    Table = tb("users")
+
+engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+async with engine.begin() as conn:
+    await conn.run_sync(tb.metadata.create_all)
+
+fancy_engine = fancy(engine)
+
+# Reuse connection for multiple operations
+async with fancy_engine.non_atomic() as conn:
+    # Manual transaction control
+    async with conn.begin():
+        await fancy_engine.nax(sa.insert(User.Table).values(name="Alice"))
+        await conn.commit()
+
+    # Or perform reads
+    result = await fancy_engine.nax(sa.select(User.name).where(User.id == 1))
+    name = result.scalar_one()
+    assert name == "Alice"
 ```
 
 ## Decorators: Inject, connect, transact

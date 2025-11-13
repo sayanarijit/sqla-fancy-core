@@ -3,9 +3,14 @@
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from sqla_fancy_core.decorators import Inject, connect, transact
+from sqla_fancy_core.errors import (
+    NotInTransactionError,
+    UnexpectedAsyncConnectionError,
+    UnsupportedEngineTypeError,
+)
 from sqla_fancy_core.wrappers import fancy
 
 # Define a simple table for testing
@@ -165,9 +170,10 @@ def test_transact_starts_transaction_for_connection_without_transaction(sync_eng
     # Pass a connection that is NOT in a transaction
     with sync_engine.connect() as conn:
         assert not conn.in_transaction()
-        create_user("Alice", conn=conn)
+        with pytest.raises(NotInTransactionError):
+            create_user("Alice", conn=conn)
 
-    assert get_user_count() == 1
+    assert get_user_count() == 0
 
 
 # Tests for async @connect with AsyncFancyEngineWrapper
@@ -284,7 +290,7 @@ async def test_async_transact_reuses_existing_transaction(async_engine):
 
 
 @pytest.mark.asyncio
-async def test_async_transact_starts_transaction_for_connection_without_transaction(
+async def test_async_transact_raises_error_for_connection_without_transaction(
     async_engine,
 ):
     """Test that async @transact starts a transaction if connection is not in one."""
@@ -303,9 +309,10 @@ async def test_async_transact_starts_transaction_for_connection_without_transact
     # Pass a connection that is NOT in a transaction
     async with async_engine.connect() as conn:
         assert not conn.in_transaction()
-        await create_user("Alice", conn=conn)
+        with pytest.raises(NotInTransactionError):
+            await create_user("Alice", conn=conn)
 
-    assert await get_user_count() == 1
+    assert await get_user_count() == 0
 
 
 # Error handling tests
@@ -320,7 +327,7 @@ async def test_sync_decorator_rejects_async_connection(sync_engine, async_engine
 
     # Try to pass an actual AsyncConnection to a sync function
     async with async_engine.connect() as async_conn:
-        with pytest.raises(TypeError, match="AsyncConnection cannot be used in sync function"):
+        with pytest.raises(UnexpectedAsyncConnectionError):
             get_user_count(conn=async_conn)
 
 
@@ -335,7 +342,7 @@ async def test_sync_transact_rejects_async_connection(sync_engine, async_engine)
 
     # Try to pass an actual AsyncConnection to a sync function
     async with async_engine.connect() as async_conn:
-        with pytest.raises(TypeError, match="AsyncConnection cannot be used in sync function"):
+        with pytest.raises(UnexpectedAsyncConnectionError):
             create_user("Alice", conn=async_conn)
 
 
@@ -347,7 +354,7 @@ def test_inject_with_unsupported_engine_type():
 
     unsupported = UnsupportedEngine()
 
-    with pytest.raises(TypeError, match="Unsupported engine type"):
+    with pytest.raises(UnsupportedEngineTypeError):
 
         @connect
         def test_func(conn=Inject(unsupported)):  # type: ignore
@@ -364,7 +371,7 @@ def test_transact_with_unsupported_engine_type():
 
     unsupported = UnsupportedEngine()
 
-    with pytest.raises(TypeError, match="Unsupported engine type"):
+    with pytest.raises(UnsupportedEngineTypeError):
 
         @transact
         def test_func(conn=Inject(unsupported)):  # type: ignore

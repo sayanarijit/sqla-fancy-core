@@ -15,39 +15,52 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.sql.selectable import TypedReturnsRows
 
+from sqla_fancy_core.errors import (
+    AtomicContextError,
+    NotInTransactionError,
+    UnexpectedAsyncConnectionError,
+)
+
 _T = TypeVar("_T", bound=Any)
-
-
-class FancyError(Exception):
-    """Custom error for FancyEngineWrapper."""
-
-    pass
-
-
-class AtomicContextError(FancyError):
-    """Error raised when ax() is called outside of an atomic context."""
-
-    def __init__(self) -> None:
-        super().__init__("ax() must be called within the atomic() context manager")
 
 
 class FancyEngineWrapper:
     """A wrapper around SQLAlchemy Engine with additional features."""
 
+    _NON_ATOMIC_TX_CONN: ContextVar[Optional[Connection]] = ContextVar(  # type: ignore
+        "_NON_ATOMIC_TX_CONN", default=None
+    )
+
     _ATOMIC_TX_CONN: ContextVar[Optional[Connection]] = ContextVar(  # type: ignore
-        "fancy_global_transaction", default=None
+        "_ATOMIC_TX_CONN", default=None
     )
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
 
     @contextmanager
+    def non_atomic(self):
+        """A context manager that provides a non-transactional connection."""
+        non_atomic_txn_conn = self._NON_ATOMIC_TX_CONN.get()
+        if non_atomic_txn_conn is not None:
+            # Reuse existing non-transaction connection
+            yield non_atomic_txn_conn
+        else:
+            with self.engine.connect() as connection:
+                token = self._NON_ATOMIC_TX_CONN.set(connection)
+                try:
+                    yield connection
+                finally:
+                    # Restore previous ContextVar state
+                    self._NON_ATOMIC_TX_CONN.reset(token)
+
+    @contextmanager
     def atomic(self):
         """A context manager that provides a transactional connection."""
-        global_txn_conn = self._ATOMIC_TX_CONN.get()
-        if global_txn_conn is not None:
+        atomic_txn_conn = self._ATOMIC_TX_CONN.get()
+        if atomic_txn_conn is not None:
             # Reuse existing transaction connection
-            yield global_txn_conn
+            yield atomic_txn_conn
         else:
             with self.engine.begin() as connection:
                 token = self._ATOMIC_TX_CONN.set(connection)
@@ -56,6 +69,44 @@ class FancyEngineWrapper:
                 finally:
                     # Restore previous ContextVar state
                     self._ATOMIC_TX_CONN.reset(token)
+
+    @overload
+    def nax(
+        self,
+        statement: TypedReturnsRows[_T],
+        parameters: Optional[_CoreAnyExecuteParams] = None,
+        *,
+        execution_options: Optional[CoreExecuteOptionsParameter] = None,
+    ) -> CursorResult[_T]: ...
+    @overload
+    def nax(
+        self,
+        statement: Executable,
+        parameters: Optional[_CoreAnyExecuteParams] = None,
+        *,
+        execution_options: Optional[CoreExecuteOptionsParameter] = None,
+    ) -> CursorResult[Any]: ...
+    def nax(
+        self,
+        statement: Executable,
+        parameters: Optional[_CoreAnyExecuteParams] = None,
+        *,
+        execution_options: Optional[CoreExecuteOptionsParameter] = None,
+    ) -> CursorResult[Any]:
+        """Execute the query within the non-atomic context and return the result.
+
+        If not within a non-atomic context, a new connection is created.
+        """
+        connection = self._NON_ATOMIC_TX_CONN.get()
+        if connection:
+            return connection.execute(
+                statement, parameters, execution_options=execution_options
+            )
+        else:
+            with self.engine.connect() as connection:
+                return connection.execute(
+                    statement, parameters, execution_options=execution_options
+                )
 
     @overload
     def ax(
@@ -120,9 +171,10 @@ class FancyEngineWrapper:
     ) -> CursorResult[Any]:
         """Connect to the database, execute the query, and return the result.
 
-        If a connection is provided, use it; otherwise, create a new one.
+        If a connection is provided, use it; otherwise, use the non-atomic context
+        or create a new one.
         """
-        connection = connection
+        connection = connection or self._NON_ATOMIC_TX_CONN.get()
         if connection:
             return connection.execute(
                 statement, parameters, execution_options=execution_options
@@ -161,21 +213,17 @@ class FancyEngineWrapper:
     ) -> CursorResult[Any]:
         """Begin a transaction, execute the query, and return the result.
 
-        If a connection is provided, use it; otherwise, use the global atomic
+        If a connection is provided, use it; otherwise, use the atomic
         context or create a new one.
         """
         connection = connection or self._ATOMIC_TX_CONN.get()
         if connection:
             if connection.in_transaction():
-                # Transaction is already active
                 return connection.execute(
                     statement, parameters, execution_options=execution_options
                 )
             else:
-                with connection.begin():
-                    return connection.execute(
-                        statement, parameters, execution_options=execution_options
-                    )
+                raise NotInTransactionError()
         else:
             with self.engine.begin() as connection:
                 return connection.execute(
@@ -222,19 +270,37 @@ class FancyEngineWrapper:
 class AsyncFancyEngineWrapper:
     """A wrapper around SQLAlchemy AsyncEngine with additional features."""
 
+    _NON_ATOMIC_TX_CONN: ContextVar[Optional[AsyncConnection]] = ContextVar(  # type: ignore
+        "_NON_ATOMIC_TX_CONN", default=None
+    )
+
     _ATOMIC_TX_CONN: ContextVar[Optional[AsyncConnection]] = ContextVar(  # type: ignore
-        "fancy_global_transaction", default=None
+        "_ATOMIC_TX_CONN", default=None
     )
 
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
 
     @asynccontextmanager
+    async def non_atomic(self):
+        """An async context manager that provides a non-transactional connection."""
+        non_atomic_txn_conn = self._NON_ATOMIC_TX_CONN.get()
+        if non_atomic_txn_conn is not None:
+            yield non_atomic_txn_conn
+        else:
+            async with self.engine.connect() as connection:
+                token = self._NON_ATOMIC_TX_CONN.set(connection)
+                try:
+                    yield connection
+                finally:
+                    self._NON_ATOMIC_TX_CONN.reset(token)
+
+    @asynccontextmanager
     async def atomic(self):
         """An async context manager that provides a transactional connection."""
-        global_txn_conn = self._ATOMIC_TX_CONN.get()
-        if global_txn_conn is not None:
-            yield global_txn_conn
+        atomic_txn_conn = self._ATOMIC_TX_CONN.get()
+        if atomic_txn_conn is not None:
+            yield atomic_txn_conn
         else:
             async with self.engine.begin() as connection:
                 token = self._ATOMIC_TX_CONN.set(connection)
@@ -242,6 +308,44 @@ class AsyncFancyEngineWrapper:
                     yield connection
                 finally:
                     self._ATOMIC_TX_CONN.reset(token)
+
+    @overload
+    async def nax(
+        self,
+        statement: TypedReturnsRows[_T],
+        parameters: Optional[_CoreAnyExecuteParams] = None,
+        *,
+        execution_options: Optional[CoreExecuteOptionsParameter] = None,
+    ) -> CursorResult[_T]: ...
+    @overload
+    async def nax(
+        self,
+        statement: Executable,
+        parameters: Optional[_CoreAnyExecuteParams] = None,
+        *,
+        execution_options: Optional[CoreExecuteOptionsParameter] = None,
+    ) -> CursorResult[Any]: ...
+    async def nax(
+        self,
+        statement: Executable,
+        parameters: Optional[_CoreAnyExecuteParams] = None,
+        *,
+        execution_options: Optional[CoreExecuteOptionsParameter] = None,
+    ) -> CursorResult[Any]:
+        """Execute the query within the non_atomic context and return the result.
+
+        If not within a non-atomic context, a new connection is created.
+        """
+        connection = self._NON_ATOMIC_TX_CONN.get()
+        if connection:
+            return await connection.execute(
+                statement, parameters, execution_options=execution_options
+            )
+        else:
+            async with self.engine.connect() as connection:
+                return await connection.execute(
+                    statement, parameters, execution_options=execution_options
+                )
 
     @overload
     async def ax(
@@ -306,8 +410,10 @@ class AsyncFancyEngineWrapper:
     ) -> CursorResult[Any]:
         """Connect to the database, execute the query, and return the result.
 
-        If a connection is provided, use it; otherwise, create a new one.
+        If a connection is provided, use it; otherwise, use the non-atomic context
+        or create a new one.
         """
+        connection = connection or self._NON_ATOMIC_TX_CONN.get()
         if connection:
             return await connection.execute(
                 statement, parameters, execution_options=execution_options
@@ -346,7 +452,7 @@ class AsyncFancyEngineWrapper:
     ) -> CursorResult[Any]:
         """Execute the query within a transaction and return the result.
 
-        If a connection is provided, use it; otherwise, use the global atomic
+        If a connection is provided, use it; otherwise, use the atomic
         context or create a new one.
         """
         connection = connection or self._ATOMIC_TX_CONN.get()
@@ -356,10 +462,7 @@ class AsyncFancyEngineWrapper:
                     statement, parameters, execution_options=execution_options
                 )
             else:
-                async with connection.begin():
-                    return await connection.execute(
-                        statement, parameters, execution_options=execution_options
-                    )
+                raise NotInTransactionError()
         else:
             async with self.engine.begin() as connection:
                 return await connection.execute(
@@ -436,4 +539,4 @@ def fancy(obj, /):
     elif isinstance(obj, AsyncEngine):
         return AsyncFancyEngineWrapper(obj)
     else:
-        raise TypeError("Unsupported input type for fancy()")
+        raise UnexpectedAsyncConnectionError()

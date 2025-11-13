@@ -2,6 +2,7 @@ import pytest
 import sqlalchemy as sa
 
 from sqla_fancy_core import TableBuilder, fancy
+from sqla_fancy_core.wrappers import NotInTransactionError
 
 tb = TableBuilder()
 
@@ -85,3 +86,36 @@ def test_transaction_context_manager_rollback(fancy_engine):
         pass
     assert fancy_engine.x(None, q_count).scalar_one() == 0
     assert fancy_engine.tx(None, q_count).scalar_one() == 0
+
+
+def test_x_tx_order_in_begin_1(fancy_engine):
+    """Test that x() and tx() can be used interchangeably and maintain transaction state."""
+    assert fancy_engine.x(None, q_count).scalar_one() == 0
+
+    with fancy_engine.engine.begin() as conn:
+        fancy_engine.tx(conn, q_insert)
+        fancy_engine.x(conn, q_insert)
+        assert fancy_engine.x(conn, q_count).scalar_one() == 2
+
+    assert fancy_engine.x(None, q_count).scalar_one() == 2
+
+
+def test_x_tx_order_in_begin_2(fancy_engine):
+    """Test that tx() and x() can be used interchangeably and maintain transaction state."""
+    assert fancy_engine.x(None, q_count).scalar_one() == 0
+
+    with fancy_engine.engine.begin() as conn:
+        fancy_engine.x(conn, q_insert)
+        fancy_engine.tx(conn, q_insert)
+        assert fancy_engine.x(conn, q_count).scalar_one() == 2
+
+    assert fancy_engine.x(None, q_count).scalar_one() == 2
+
+
+def test_tx_raises_error_on_non_transactional_connection(fancy_engine):
+    """Test that tx() raises NotInTransactionError when connection is not in a transaction."""
+    with fancy_engine.engine.connect() as conn:
+        # Connection exists but is not in a transaction
+        assert conn.in_transaction() is False
+        with pytest.raises(NotInTransactionError):
+            fancy_engine.tx(conn, q_insert)
