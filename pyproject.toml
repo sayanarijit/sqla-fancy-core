@@ -45,6 +45,7 @@ test = [
   "httpx",
   "python-multipart",
   "asyncpg",
+  "psycopg2-binary",
 ]
 dev = ["hatchling", "twine", "build", "ipython"]
 

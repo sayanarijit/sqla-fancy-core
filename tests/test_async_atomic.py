@@ -31,6 +31,19 @@ async def fancy_engine():
         await eng.engine.dispose()
 
 
+@pytest_asyncio.fixture
+async def fancy_engine_postgres():
+    eng = fancy(create_async_engine("postgresql+asyncpg://test:test@localhost/test"))
+    async with eng.engine.begin() as conn:
+        await conn.run_sync(tb.metadata.create_all)
+    try:
+        yield eng
+    finally:
+        async with eng.engine.begin() as conn:
+            await conn.run_sync(tb.metadata.drop_all)
+        await eng.engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_ax_raises_outside_atomic(fancy_engine):
     with pytest.raises(AtomicContextError):
@@ -93,3 +106,64 @@ async def test_atx_inside_atomic_reuses_same_connection(fancy_engine):
         assert (await fancy_engine.ax(q_count)).scalar_one() == 1
         assert conn.in_transaction() is True
     assert (await fancy_engine.x(None, q_count)).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_multiple_atx_calls_outside_atomic(fancy_engine):
+    """Test that multiple atx() calls outside atomic each create and commit their own transactions."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+    await fancy_engine.atx(q_insert)
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 1
+    await fancy_engine.atx(q_insert)
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 2
+    await fancy_engine.atx(q_insert)
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 3
+
+
+@pytest.mark.asyncio
+async def test_atomic_isolation_from_other_connections(fancy_engine_postgres):
+    """Test that changes inside atomic are not visible to other connections until committed."""
+    assert (await fancy_engine_postgres.x(None, q_count)).scalar_one() == 0
+    
+    async with fancy_engine_postgres.atomic():
+        await fancy_engine_postgres.ax(q_insert)
+        assert (await fancy_engine_postgres.ax(q_count)).scalar_one() == 1
+        # A new connection outside the atomic context shouldn't see the uncommitted insert
+        assert (await fancy_engine_postgres.x(None, q_count)).scalar_one() == 0
+    
+    # After commit, new connections should see it
+    assert (await fancy_engine_postgres.x(None, q_count)).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_nested_atomic_commits_at_outermost_level(fancy_engine):
+    """Test that nested atomic contexts only commit when the outermost context exits."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+    
+    async with fancy_engine.atomic():
+        await fancy_engine.ax(q_insert)
+        async with fancy_engine.atomic():
+            await fancy_engine.ax(q_insert)
+            assert (await fancy_engine.ax(q_count)).scalar_one() == 2
+            # Still in transaction
+        # Inner context exited, but still in outer transaction
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 3
+    
+    # Now committed
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 3
+
+
+@pytest.mark.asyncio
+async def test_atomic_with_explicit_rollback_raises_exception(fancy_engine):
+    """Test that explicitly calling rollback in atomic context still allows exception to propagate."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+    
+    with pytest.raises(RuntimeError):
+        async with fancy_engine.atomic() as conn:
+            await fancy_engine.ax(q_insert)
+            await conn.rollback()
+            raise RuntimeError("explicit rollback then error")
+    
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+

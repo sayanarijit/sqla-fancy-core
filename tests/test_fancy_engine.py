@@ -25,7 +25,8 @@ def fancy_engine():
     fancy_engine.engine.dispose()
 
 
-def test_insert(fancy_engine):
+def test_tx_auto_commits_without_explicit_connection(fancy_engine):
+    """Test that tx(None, ...) auto-commits when no connection is provided."""
     assert fancy_engine.x(None, q_count).scalar_one() == 0
     fancy_engine.tx(None, q_insert)
     assert fancy_engine.x(None, q_count).scalar_one() == 1
@@ -119,3 +120,37 @@ def test_tx_raises_error_on_non_transactional_connection(fancy_engine):
         assert conn.in_transaction() is False
         with pytest.raises(NotInTransactionError):
             fancy_engine.tx(conn, q_insert)
+
+
+def test_x_with_none_creates_new_connection_each_time(fancy_engine):
+    """Test that x(None, ...) creates a new connection for each call."""
+    assert fancy_engine.x(None, q_count).scalar_one() == 0
+    fancy_engine.x(None, q_insert)
+    # Without commit, nothing should persist
+    assert fancy_engine.x(None, q_count).scalar_one() == 0
+
+
+def test_multiple_tx_calls_with_none(fancy_engine):
+    """Test that tx(None, ...) auto-commits each time."""
+    assert fancy_engine.x(None, q_count).scalar_one() == 0
+    fancy_engine.tx(None, q_insert)
+    assert fancy_engine.x(None, q_count).scalar_one() == 1
+    fancy_engine.tx(None, q_insert)
+    assert fancy_engine.x(None, q_count).scalar_one() == 2
+    fancy_engine.tx(None, q_insert)
+    assert fancy_engine.x(None, q_count).scalar_one() == 3
+
+
+def test_x_and_tx_with_explicit_connection_see_same_state(fancy_engine):
+    """Test that x() and tx() with the same connection see the same uncommitted state."""
+    with fancy_engine.engine.begin() as conn:
+        fancy_engine.tx(conn, q_insert)
+        # x() with same connection should see uncommitted insert
+        assert fancy_engine.x(conn, q_count).scalar_one() == 1
+        fancy_engine.x(conn, q_insert)
+        # tx() with same connection should see both inserts
+        assert fancy_engine.tx(conn, q_count).scalar_one() == 2
+    
+    # Both should be committed
+    assert fancy_engine.x(None, q_count).scalar_one() == 2
+

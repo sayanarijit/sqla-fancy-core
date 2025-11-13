@@ -180,7 +180,7 @@ async def test_tx_works_with_explicit_transaction_in_non_atomic(fancy_engine):
 
 
 @pytest.mark.asyncio
-async def test_non_atomic_rollback_does_nothing(fancy_engine):
+async def test_non_atomic_rollback_reverts_changes(fancy_engine):
     """Test that rollback in non_atomic reverts uncommitted changes."""
     count = await fancy_engine.x(None, q_count)
     assert count.scalar_one() == 0
@@ -199,7 +199,7 @@ async def test_non_atomic_rollback_does_nothing(fancy_engine):
 
 
 @pytest.mark.asyncio
-async def test_non_atomic_commit_does_nothing(fancy_engine):
+async def test_non_atomic_commit_persists_changes(fancy_engine):
     """Test that commit in non_atomic persists changes."""
     count = await fancy_engine.x(None, q_count)
     assert count.scalar_one() == 0
@@ -214,6 +214,64 @@ async def test_non_atomic_commit_does_nothing(fancy_engine):
     # After commit, the change persists
     count = await fancy_engine.x(None, q_count)
     assert count.scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_multiple_nax_calls_without_context(fancy_engine):
+    """Test that multiple nax() calls outside context each create new connections."""
+    count = await fancy_engine.nax(q_count)
+    assert count.scalar_one() == 0
+    await fancy_engine.nax(q_insert)
+    # Without commit, nothing persists
+    count = await fancy_engine.nax(q_count)
+    assert count.scalar_one() == 0
+    await fancy_engine.nax(q_insert)
+    count = await fancy_engine.nax(q_count)
+    assert count.scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_non_atomic_and_atomic_dont_interfere(fancy_engine):
+    """Test that non_atomic and atomic contexts don't interfere with each other."""
+    count = await fancy_engine.x(None, q_count)
+    assert count.scalar_one() == 0
+    
+    # Use atomic to commit one insert
+    async with fancy_engine.atomic():
+        await fancy_engine.ax(q_insert)
+    
+    count = await fancy_engine.x(None, q_count)
+    assert count.scalar_one() == 1
+    
+    # Use non_atomic without commit - shouldn't persist
+    async with fancy_engine.non_atomic():
+        await fancy_engine.nax(q_insert)
+        count = await fancy_engine.nax(q_count)
+        assert count.scalar_one() == 2
+    
+    # Only the atomic insert should persist
+    count = await fancy_engine.x(None, q_count)
+    assert count.scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_deeply_nested_non_atomic(fancy_engine):
+    """Test that deeply nested non_atomic contexts all share the same connection."""
+    async with fancy_engine.non_atomic() as conn1:
+        await fancy_engine.nax(q_insert)
+        async with fancy_engine.non_atomic() as conn2:
+            assert conn1 is conn2
+            await fancy_engine.nax(q_insert)
+            async with fancy_engine.non_atomic() as conn3:
+                assert conn1 is conn3
+                await fancy_engine.nax(q_insert)
+                count = await fancy_engine.nax(q_count)
+                assert count.scalar_one() == 3
+    
+    # Nothing committed
+    count = await fancy_engine.x(None, q_count)
+    assert count.scalar_one() == 0
+
 
 
 @pytest.mark.asyncio

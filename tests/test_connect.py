@@ -164,3 +164,72 @@ async def test_async_fastapi_integration(async_engine):
     response = client.get("/user-count")
     assert response.status_code == 200
     assert response.json() == 0
+
+
+@pytest.mark.asyncio
+async def test_async_connect_with_explicit_connection(async_engine):
+    """Test that @connect works with an explicitly passed async connection."""
+    @connect
+    async def insert_user(name: str, conn=Inject(async_engine)):
+        await conn.execute(sa.insert(users).values(name=name))
+    
+    @connect
+    async def count_users(conn=Inject(async_engine)):
+        result = await conn.execute(sa.select(sa.func.count()).select_from(users))
+        return result.scalar_one()
+    
+    # Use with explicit connection and transaction
+    async with async_engine.begin() as conn:
+        await insert_user("Alice", conn=conn)
+        await insert_user("Bob", conn=conn)
+        assert await count_users(conn=conn) == 2
+    
+    # Verify persistence
+    assert await count_users() == 2
+
+
+def test_sync_connect_with_explicit_connection(sync_engine):
+    """Test that @connect works with an explicitly passed sync connection."""
+    @connect
+    def insert_user(name: str, conn=Inject(sync_engine)):
+        conn.execute(sa.insert(users).values(name=name))
+    
+    @connect
+    def count_users(conn=Inject(sync_engine)):
+        result = conn.execute(sa.select(sa.func.count()).select_from(users))
+        return result.scalar_one()
+    
+    # Use with explicit connection and transaction
+    with sync_engine.begin() as conn:
+        insert_user("Alice", conn=conn)
+        insert_user("Bob", conn=conn)
+        assert count_users(conn=conn) == 2
+    
+    # Verify persistence
+    assert count_users() == 2
+
+
+def test_connect_decorator_preserves_function_metadata(sync_engine):
+    """Test that @connect preserves the original function's metadata."""
+    @connect
+    def my_function(x: int, y: str, conn=Inject(sync_engine)) -> str:
+        """This is my function's docstring."""
+        return f"{x} {y}"
+    
+    assert my_function.__name__ == "my_function"
+    assert my_function.__doc__ == "This is my function's docstring."
+    assert my_function(5, "test") == "5 test"
+
+
+@pytest.mark.asyncio
+async def test_async_connect_decorator_preserves_function_metadata(async_engine):
+    """Test that @connect preserves the original async function's metadata."""
+    @connect
+    async def my_async_function(x: int, y: str, conn=Inject(async_engine)) -> str:
+        """This is my async function's docstring."""
+        return f"{x} {y}"
+    
+    assert my_async_function.__name__ == "my_async_function"
+    assert my_async_function.__doc__ == "This is my async function's docstring."
+    assert await my_async_function(5, "test") == "5 test"
+

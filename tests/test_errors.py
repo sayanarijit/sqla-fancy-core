@@ -173,3 +173,72 @@ def test_error_messages():
         str(UnsupportedEngineTypeError())
         == "Unsupported engine type provided to the decorator"
     )
+
+
+def test_atomic_context_error_with_nested_atomic(sync_engine):
+    """Test that ax() raises error even when accidentally called outside all atomic contexts."""
+    fancy_engine = fancy(sync_engine)
+    
+    # Even though we're tracking atomic context, ax() outside should fail
+    with pytest.raises(AtomicContextError):
+        fancy_engine.ax(q_insert)
+    
+    # Inside atomic it should work
+    with fancy_engine.atomic():
+        fancy_engine.ax(q_insert)  # This should work
+    
+    # After exiting, it should fail again
+    with pytest.raises(AtomicContextError):
+        fancy_engine.ax(q_insert)
+
+
+@pytest.mark.asyncio
+async def test_async_atomic_context_error_with_nested_atomic(async_engine):
+    """Test that async ax() raises error even when accidentally called outside all atomic contexts."""
+    fancy_engine = fancy(async_engine)
+    
+    # Even though we're tracking atomic context, ax() outside should fail
+    with pytest.raises(AtomicContextError):
+        await fancy_engine.ax(q_insert)
+    
+    # Inside atomic it should work
+    async with fancy_engine.atomic():
+        await fancy_engine.ax(q_insert)  # This should work
+    
+    # After exiting, it should fail again
+    with pytest.raises(AtomicContextError):
+        await fancy_engine.ax(q_insert)
+
+
+def test_not_in_transaction_error_after_commit(sync_engine):
+    """Test that tx() raises error after explicit commit ends the transaction."""
+    fancy_engine = fancy(sync_engine)
+    
+    with sync_engine.connect() as conn:
+        conn.execute(sa.text("BEGIN"))
+        assert conn.in_transaction()
+        fancy_engine.tx(conn, q_insert)  # Should work
+        conn.commit()
+        assert not conn.in_transaction()
+        
+        # Now tx() should fail
+        with pytest.raises(NotInTransactionError):
+            fancy_engine.tx(conn, q_insert)
+
+
+@pytest.mark.asyncio
+async def test_async_not_in_transaction_error_after_commit(async_engine):
+    """Test that async tx() raises error after explicit commit ends the transaction."""
+    fancy_engine = fancy(async_engine)
+    
+    async with async_engine.connect() as conn:
+        async with conn.begin():
+            assert conn.in_transaction()
+            await fancy_engine.tx(conn, q_insert)  # Should work
+        
+        assert not conn.in_transaction()
+        
+        # Now tx() should fail
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.tx(conn, q_insert)
+
