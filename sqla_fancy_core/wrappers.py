@@ -27,8 +27,8 @@ _T = TypeVar("_T", bound=Any)
 class FancyEngineWrapper:
     """A wrapper around SQLAlchemy Engine with additional features."""
 
-    _NON_ATOMIC_TX_CONN: ContextVar[Optional[Connection]] = ContextVar(  # type: ignore
-        "_NON_ATOMIC_TX_CONN", default=None
+    _NON_ATOMIC_CONN: ContextVar[Optional[Connection]] = ContextVar(  # type: ignore
+        "_NON_ATOMIC_CONN", default=None
     )
 
     _ATOMIC_TX_CONN: ContextVar[Optional[Connection]] = ContextVar(  # type: ignore
@@ -41,18 +41,17 @@ class FancyEngineWrapper:
     @contextmanager
     def non_atomic(self):
         """A context manager that provides a non-transactional connection."""
-        non_atomic_txn_conn = self._NON_ATOMIC_TX_CONN.get()
+        non_atomic_txn_conn = self._NON_ATOMIC_CONN.get()
         if non_atomic_txn_conn is not None:
-            # Reuse existing non-transaction connection
             yield non_atomic_txn_conn
         else:
             with self.engine.connect() as connection:
-                token = self._NON_ATOMIC_TX_CONN.set(connection)
+                token = self._NON_ATOMIC_CONN.set(connection)
                 try:
                     yield connection
                 finally:
                     # Restore previous ContextVar state
-                    self._NON_ATOMIC_TX_CONN.reset(token)
+                    self._NON_ATOMIC_CONN.reset(token)
 
     @contextmanager
     def atomic(self):
@@ -97,7 +96,7 @@ class FancyEngineWrapper:
 
         If not within a non-atomic context, a new connection is created.
         """
-        connection = self._NON_ATOMIC_TX_CONN.get()
+        connection = self._NON_ATOMIC_CONN.get()
         if connection:
             return connection.execute(
                 statement, parameters, execution_options=execution_options
@@ -174,7 +173,7 @@ class FancyEngineWrapper:
         If a connection is provided, use it; otherwise, use the non-atomic context
         or create a new one.
         """
-        connection = connection or self._NON_ATOMIC_TX_CONN.get()
+        connection = connection or self._NON_ATOMIC_CONN.get()
         if connection:
             return connection.execute(
                 statement, parameters, execution_options=execution_options
@@ -270,8 +269,8 @@ class FancyEngineWrapper:
 class AsyncFancyEngineWrapper:
     """A wrapper around SQLAlchemy AsyncEngine with additional features."""
 
-    _NON_ATOMIC_TX_CONN: ContextVar[Optional[AsyncConnection]] = ContextVar(  # type: ignore
-        "_NON_ATOMIC_TX_CONN", default=None
+    _NON_ATOMIC_CONN: ContextVar[Optional[AsyncConnection]] = ContextVar(  # type: ignore
+        "_NON_ATOMIC_CONN", default=None
     )
 
     _ATOMIC_TX_CONN: ContextVar[Optional[AsyncConnection]] = ContextVar(  # type: ignore
@@ -284,16 +283,16 @@ class AsyncFancyEngineWrapper:
     @asynccontextmanager
     async def non_atomic(self):
         """An async context manager that provides a non-transactional connection."""
-        non_atomic_txn_conn = self._NON_ATOMIC_TX_CONN.get()
+        non_atomic_txn_conn = self._NON_ATOMIC_CONN.get()
         if non_atomic_txn_conn is not None:
             yield non_atomic_txn_conn
         else:
             async with self.engine.connect() as connection:
-                token = self._NON_ATOMIC_TX_CONN.set(connection)
+                token = self._NON_ATOMIC_CONN.set(connection)
                 try:
                     yield connection
                 finally:
-                    self._NON_ATOMIC_TX_CONN.reset(token)
+                    self._NON_ATOMIC_CONN.reset(token)
 
     @asynccontextmanager
     async def atomic(self):
@@ -336,7 +335,7 @@ class AsyncFancyEngineWrapper:
 
         If not within a non-atomic context, a new connection is created.
         """
-        connection = self._NON_ATOMIC_TX_CONN.get()
+        connection = self._NON_ATOMIC_CONN.get()
         if connection:
             return await connection.execute(
                 statement, parameters, execution_options=execution_options
@@ -413,7 +412,7 @@ class AsyncFancyEngineWrapper:
         If a connection is provided, use it; otherwise, use the non-atomic context
         or create a new one.
         """
-        connection = connection or self._NON_ATOMIC_TX_CONN.get()
+        connection = connection or self._NON_ATOMIC_CONN.get()
         if connection:
             return await connection.execute(
                 statement, parameters, execution_options=execution_options
