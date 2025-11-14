@@ -1256,7 +1256,7 @@ wheels = [
 
 [[package]]
 name = "sqla-fancy-core"
-version = "3.0.1"
+version = "4.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "sqlalchemy" },

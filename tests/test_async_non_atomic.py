@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from sqla_fancy_core import TableBuilder, fancy
-from sqla_fancy_core.errors import NotInTransactionError
+from sqla_fancy_core.errors import AtomicInsideNonAtomicError, NotInTransactionError
 
 tb = TableBuilder()
 
@@ -306,3 +306,162 @@ async def test_atomic_non_atomic_run_asynchronously(fancy_engine_postgres):
     )
 
     assert (await fancy_engine_postgres.x(None, q_count)).scalar_one() == 3
+
+
+@pytest.mark.asyncio
+async def test_atomic_inside_non_atomic_requires_transaction(fancy_engine):
+    """Test that atomic() inside non_atomic() requires an active transaction."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    # Attempting to use atomic() inside non_atomic() without a transaction should fail
+    with pytest.raises(AtomicInsideNonAtomicError):
+        async with fancy_engine.non_atomic():
+            async with fancy_engine.atomic():
+                pass
+
+    # But it works if we start an explicit transaction first
+    async with fancy_engine.non_atomic() as conn1:
+        async with conn1.begin():
+            # Now atomic() should reuse the same connection
+            async with fancy_engine.atomic() as conn2:
+                assert conn1 is conn2
+                assert conn2.in_transaction() is True
+                await fancy_engine.ax(q_insert)
+                assert (await fancy_engine.ax(q_count)).scalar_one() == 1
+            # After atomic exits, still in non_atomic's explicit transaction
+            assert conn1.in_transaction() is True
+
+    # The explicit transaction commit should have persisted the change
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_non_atomic_inside_atomic_reuses_connection(fancy_engine):
+    """Test that non_atomic() inside atomic() reuses the same connection."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn1:
+        assert conn1.in_transaction() is True
+        # Start non_atomic context - should reuse the same connection
+        async with fancy_engine.non_atomic() as conn2:
+            assert conn1 is conn2
+            assert conn2.in_transaction() is True
+            await fancy_engine.nax(q_insert)
+            assert (await fancy_engine.nax(q_count)).scalar_one() == 1
+        # Still in transaction after non_atomic exits
+        assert conn1.in_transaction() is True
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 2
+
+    # Both inserts should be committed
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+async def test_nax_works_in_atomic_context(fancy_engine):
+    """Test that nax() works correctly within atomic() context."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic():
+        await fancy_engine.nax(q_insert)
+        await fancy_engine.ax(q_insert)
+        # Both should be visible in the same transaction
+        assert (await fancy_engine.nax(q_count)).scalar_one() == 2
+
+    # Both should be committed
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+async def test_ax_fails_in_non_atomic_without_explicit_transaction(fancy_engine):
+    """Test that ax() raises error in non_atomic() without explicit transaction started."""
+    from sqla_fancy_core.errors import AtomicContextError
+
+    # ax() outside any context should raise AtomicContextError
+    with pytest.raises(AtomicContextError):
+        await fancy_engine.ax(q_insert)
+
+    # ax() in non_atomic without transaction raises NotInTransactionError
+    # because the connection exists but is not in a transaction
+    with pytest.raises(NotInTransactionError):
+        async with fancy_engine.non_atomic():
+            await fancy_engine.ax(q_insert)
+
+
+@pytest.mark.asyncio
+async def test_mixed_nesting_atomic_non_atomic_atomic(fancy_engine):
+    """Test complex nesting: atomic -> non_atomic -> atomic."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn1:
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 1
+
+        async with fancy_engine.non_atomic() as conn2:
+            assert conn1 is conn2
+            await fancy_engine.nax(q_insert)
+            assert (await fancy_engine.nax(q_count)).scalar_one() == 2
+
+            async with fancy_engine.atomic() as conn3:
+                assert conn1 is conn3
+                await fancy_engine.ax(q_insert)
+                assert (await fancy_engine.ax(q_count)).scalar_one() == 3
+
+            assert (await fancy_engine.nax(q_count)).scalar_one() == 3
+
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 3
+
+    # All should be committed
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 3
+
+
+@pytest.mark.asyncio
+async def test_rollback_in_non_atomic_inside_atomic_affects_all(fancy_engine):
+    """Test that rollback in nested non_atomic affects the outer atomic transaction."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn1:
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 1
+
+        async with fancy_engine.non_atomic() as conn2:
+            assert conn1 is conn2
+            await fancy_engine.nax(q_insert)
+            assert (await fancy_engine.nax(q_count)).scalar_one() == 2
+            # Rollback should affect the entire transaction
+            await conn2.rollback()
+            # After rollback, connection is not in transaction
+            assert conn2.in_transaction() is False
+
+        # After rollback, ax should fail because not in transaction
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.ax(q_insert)
+
+    # Nothing should be committed due to rollback
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_commit_in_non_atomic_inside_atomic_commits_early(fancy_engine):
+    """Test that commit in nested non_atomic commits the outer atomic transaction."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn1:
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 1
+
+        async with fancy_engine.non_atomic() as conn2:
+            assert conn1 is conn2
+            await fancy_engine.nax(q_insert)
+            assert (await fancy_engine.nax(q_count)).scalar_one() == 2
+            # Explicit commit
+            await conn2.commit()
+            # After commit, connection is not in transaction
+            assert conn2.in_transaction() is False
+
+        # After commit, ax should fail because not in transaction
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.ax(q_insert)
+
+    # The committed changes should persist
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 2
