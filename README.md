@@ -309,7 +309,7 @@ Use `@connect` for read-only operations. Use `@transact` for writes.
 
 ```python
 import sqlalchemy as sa
-from sqla_fancy_core.decorators import Inject, connect, transact
+from sqla_fancy_core import Inject, connect, transact
 
 engine = sa.create_engine("sqlite:///:memory:")
 metadata = sa.MetaData()
@@ -346,7 +346,7 @@ with engine.begin() as txn:
 ```python
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
-from sqla_fancy_core.decorators import Inject, connect, transact
+from sqla_fancy_core import Inject, connect, transact
 
 engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 metadata = sa.MetaData()
@@ -386,7 +386,7 @@ Also works with dependency injection frameworks like FastAPI:
 from typing import Annotated
 from fastapi import Depends, FastAPI, Form
 import sqlalchemy as sa
-from sqla_fancy_core.decorators import Inject, transact
+from sqla_fancy_core import Inject, transact
 
 app = FastAPI()
 
@@ -415,7 +415,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Form
 from sqlalchemy.ext.asyncio import AsyncConnection
 import sqlalchemy as sa
-from sqla_fancy_core.decorators import Inject, transact
+from sqla_fancy_core import Inject, transact
 
 app = FastAPI()
 

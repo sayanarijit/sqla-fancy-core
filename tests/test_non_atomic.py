@@ -4,7 +4,7 @@ import pytest
 import sqlalchemy as sa
 
 from sqla_fancy_core import TableBuilder, fancy
-from sqla_fancy_core.wrappers import NotInTransactionError
+from sqla_fancy_core.errors import NotInTransactionError
 
 tb = TableBuilder()
 
@@ -170,18 +170,18 @@ def test_multiple_nax_calls_without_context(fancy_engine):
 def test_non_atomic_and_atomic_dont_interfere(fancy_engine):
     """Test that non_atomic and atomic contexts don't interfere with each other."""
     assert fancy_engine.x(None, q_count).scalar_one() == 0
-    
+
     # Use atomic to commit one insert
     with fancy_engine.atomic():
         fancy_engine.ax(q_insert)
-    
+
     assert fancy_engine.x(None, q_count).scalar_one() == 1
-    
+
     # Use non_atomic without commit - shouldn't persist
     with fancy_engine.non_atomic():
         fancy_engine.nax(q_insert)
         assert fancy_engine.nax(q_count).scalar_one() == 2
-    
+
     # Only the atomic insert should persist
     assert fancy_engine.x(None, q_count).scalar_one() == 1
 
@@ -197,7 +197,6 @@ def test_deeply_nested_non_atomic(fancy_engine):
                 assert conn1 is conn3
                 fancy_engine.nax(q_insert)
                 assert fancy_engine.nax(q_count).scalar_one() == 3
-    
+
     # Nothing committed
     assert fancy_engine.x(None, q_count).scalar_one() == 0
-

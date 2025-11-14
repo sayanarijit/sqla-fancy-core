@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from sqla_fancy_core import TableBuilder, fancy
-from sqla_fancy_core.wrappers import NotInTransactionError
+from sqla_fancy_core.errors import NotInTransactionError
 
 tb = TableBuilder()
 
@@ -235,20 +235,20 @@ async def test_non_atomic_and_atomic_dont_interfere(fancy_engine):
     """Test that non_atomic and atomic contexts don't interfere with each other."""
     count = await fancy_engine.x(None, q_count)
     assert count.scalar_one() == 0
-    
+
     # Use atomic to commit one insert
     async with fancy_engine.atomic():
         await fancy_engine.ax(q_insert)
-    
+
     count = await fancy_engine.x(None, q_count)
     assert count.scalar_one() == 1
-    
+
     # Use non_atomic without commit - shouldn't persist
     async with fancy_engine.non_atomic():
         await fancy_engine.nax(q_insert)
         count = await fancy_engine.nax(q_count)
         assert count.scalar_one() == 2
-    
+
     # Only the atomic insert should persist
     count = await fancy_engine.x(None, q_count)
     assert count.scalar_one() == 1
@@ -267,11 +267,10 @@ async def test_deeply_nested_non_atomic(fancy_engine):
                 await fancy_engine.nax(q_insert)
                 count = await fancy_engine.nax(q_count)
                 assert count.scalar_one() == 3
-    
+
     # Nothing committed
     count = await fancy_engine.x(None, q_count)
     assert count.scalar_one() == 0
-
 
 
 @pytest.mark.asyncio

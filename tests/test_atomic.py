@@ -2,7 +2,7 @@ import pytest
 import sqlalchemy as sa
 
 from sqla_fancy_core import TableBuilder, fancy
-from sqla_fancy_core.wrappers import AtomicContextError
+from sqla_fancy_core.errors import AtomicContextError
 
 tb = TableBuilder()
 
@@ -117,13 +117,13 @@ def test_multiple_atx_calls_outside_atomic(fancy_engine):
 def test_atomic_isolation_from_other_connections(fancy_engine_postgres):
     """Test that changes inside atomic are not visible to other connections until committed."""
     assert fancy_engine_postgres.x(None, q_count).scalar_one() == 0
-    
+
     with fancy_engine_postgres.atomic():
         fancy_engine_postgres.ax(q_insert)
         assert fancy_engine_postgres.ax(q_count).scalar_one() == 1
         # A new connection outside the atomic context shouldn't see the uncommitted insert
         assert fancy_engine_postgres.x(None, q_count).scalar_one() == 0
-    
+
     # After commit, new connections should see it
     assert fancy_engine_postgres.x(None, q_count).scalar_one() == 1
 
@@ -131,7 +131,7 @@ def test_atomic_isolation_from_other_connections(fancy_engine_postgres):
 def test_nested_atomic_commits_at_outermost_level(fancy_engine):
     """Test that nested atomic contexts only commit when the outermost context exits."""
     assert fancy_engine.x(None, q_count).scalar_one() == 0
-    
+
     with fancy_engine.atomic():
         fancy_engine.ax(q_insert)
         with fancy_engine.atomic():
@@ -141,7 +141,7 @@ def test_nested_atomic_commits_at_outermost_level(fancy_engine):
         # Inner context exited, but still in outer transaction
         fancy_engine.ax(q_insert)
         assert fancy_engine.ax(q_count).scalar_one() == 3
-    
+
     # Now committed
     assert fancy_engine.x(None, q_count).scalar_one() == 3
 
@@ -149,12 +149,11 @@ def test_nested_atomic_commits_at_outermost_level(fancy_engine):
 def test_atomic_with_explicit_rollback_raises_exception(fancy_engine):
     """Test that explicitly calling rollback in atomic context still allows exception to propagate."""
     assert fancy_engine.x(None, q_count).scalar_one() == 0
-    
+
     with pytest.raises(RuntimeError):
         with fancy_engine.atomic() as conn:
             fancy_engine.ax(q_insert)
             conn.rollback()
             raise RuntimeError("explicit rollback then error")
-    
-    assert fancy_engine.x(None, q_count).scalar_one() == 0
 
+    assert fancy_engine.x(None, q_count).scalar_one() == 0

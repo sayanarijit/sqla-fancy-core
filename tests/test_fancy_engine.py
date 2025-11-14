@@ -2,7 +2,7 @@ import pytest
 import sqlalchemy as sa
 
 from sqla_fancy_core import TableBuilder, fancy
-from sqla_fancy_core.wrappers import NotInTransactionError
+from sqla_fancy_core.errors import NotInTransactionError
 
 tb = TableBuilder()
 
@@ -150,7 +150,6 @@ def test_x_and_tx_with_explicit_connection_see_same_state(fancy_engine):
         fancy_engine.x(conn, q_insert)
         # tx() with same connection should see both inserts
         assert fancy_engine.tx(conn, q_count).scalar_one() == 2
-    
+
     # Both should be committed
     assert fancy_engine.x(None, q_count).scalar_one() == 2
-

@@ -7,7 +7,7 @@ from fastapi import Form
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from sqla_fancy_core.decorators import Inject, transact
+from sqla_fancy_core import Inject, transact
 
 # Define a simple table for testing
 metadata = sa.MetaData()

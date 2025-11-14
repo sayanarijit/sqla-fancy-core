@@ -5,13 +5,12 @@ import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from sqla_fancy_core.decorators import Inject, connect, transact
+from sqla_fancy_core import Inject, connect, fancy, transact
 from sqla_fancy_core.errors import (
     NotInTransactionError,
     UnexpectedAsyncConnectionError,
     UnsupportedEngineTypeError,
 )
-from sqla_fancy_core.wrappers import fancy
 
 # Define a simple table for testing
 metadata = sa.MetaData()
