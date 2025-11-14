@@ -1,6 +1,6 @@
 [project]
 name = 'sqla-fancy-core'
-version = '3.0.0'
+version = '3.0.1'
 description = 'A collection of type-safe, async friendly, and un-opinionated enhancements to SQLAlchemy Core that works well with mordern web servers.'
 readme = 'README.md'
 requires-python = ">=3.10"
