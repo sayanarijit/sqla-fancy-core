@@ -4,7 +4,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from sqla_fancy_core import TableBuilder, fancy
-from sqla_fancy_core.errors import AtomicContextError
+from sqla_fancy_core.errors import AtomicContextError, NotInTransactionError
 
 tb = TableBuilder()
 
@@ -129,7 +129,9 @@ async def test_atomic_isolation_from_other_connections(fancy_engine_postgres):
         await fancy_engine_postgres.ax(q_insert)
         assert (await fancy_engine_postgres.ax(q_count)).scalar_one() == 1
         # A new connection outside the atomic context shouldn't see the uncommitted insert
-        assert (await fancy_engine_postgres.x(None, q_count)).scalar_one() == 0
+        # Create an explicit new connection to test isolation
+        async with fancy_engine_postgres.engine.connect() as new_conn:
+            assert (await fancy_engine_postgres.x(new_conn, q_count)).scalar_one() == 0
 
     # After commit, new connections should see it
     assert (await fancy_engine_postgres.x(None, q_count)).scalar_one() == 1
@@ -166,3 +168,83 @@ async def test_atomic_with_explicit_rollback_raises_exception(fancy_engine):
             raise RuntimeError("explicit rollback then error")
 
     assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_ax_raises_not_in_transaction_after_commit(fancy_engine):
+    """Test that ax() raises NotInTransactionError when connection is not in transaction."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn:
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 1
+        # Manually commit the transaction
+        await conn.commit()
+        # Now ax() should raise NotInTransactionError
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.ax(q_insert)
+
+
+@pytest.mark.asyncio
+async def test_atx_raises_not_in_transaction_after_commit(fancy_engine):
+    """Test that atx() raises NotInTransactionError when connection is not in transaction."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn:
+        await fancy_engine.atx(q_insert)
+        assert (await fancy_engine.atx(q_count)).scalar_one() == 1
+        # Manually commit the transaction
+        await conn.commit()
+        # Now atx() should raise NotInTransactionError
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.atx(q_insert)
+
+
+@pytest.mark.asyncio
+async def test_tx_raises_not_in_transaction_with_committed_connection(fancy_engine):
+    """Test that tx() raises NotInTransactionError when passed a non-transactional connection."""
+    # Create a connection without a transaction
+    async with fancy_engine.engine.connect() as conn:
+        # Connection exists but is not in a transaction
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.tx(conn, q_insert)
+
+
+@pytest.mark.asyncio
+async def test_ax_works_after_nested_atomic_with_same_connection(fancy_engine):
+    """Test that ax() continues to work in nested atomic contexts using the same connection."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn1:
+        await fancy_engine.ax(q_insert)
+        assert conn1.in_transaction() is True
+        
+        async with fancy_engine.atomic() as conn2:
+            # Same connection should be reused
+            assert conn1 is conn2
+            assert conn2.in_transaction() is True
+            await fancy_engine.ax(q_insert)
+            assert (await fancy_engine.ax(q_count)).scalar_one() == 2
+        
+        # Still in transaction after nested context
+        assert conn1.in_transaction() is True
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 3
+
+    # All committed
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 3
+
+
+@pytest.mark.asyncio
+async def test_atomic_rejects_ax_after_rollback(fancy_engine):
+    """Test that ax() raises NotInTransactionError after explicit rollback."""
+    assert (await fancy_engine.x(None, q_count)).scalar_one() == 0
+
+    async with fancy_engine.atomic() as conn:
+        await fancy_engine.ax(q_insert)
+        assert (await fancy_engine.ax(q_count)).scalar_one() == 1
+        # Explicitly rollback
+        await conn.rollback()
+        # Connection is no longer in transaction
+        with pytest.raises(NotInTransactionError):
+            await fancy_engine.ax(q_insert)

@@ -121,9 +121,9 @@ Simplify running queries with or without explicit connection or transaction. The
 
 ### Execute query without transaction
 
-- `x(conn, query)`: Execute query with optional connection (reuses `non_atomic()` context if available, else creates new)
+- `x(conn, query)`: Execute query with optional connection (reuses `non_atomic()` or `atomic()` context if available, else creates new)
 - `non_atomic()`: Context manager for non-transactional connections (allows manual transaction control)
-- `nax(query)`: Execute inside `non_atomic()` context or create a new connection
+- `nax(query)`: Execute inside `non_atomic()` or `atomic()` context or create a new connection
 
 ### Basic Examples
 

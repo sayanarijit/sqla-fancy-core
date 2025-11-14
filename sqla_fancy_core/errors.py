@@ -30,3 +30,10 @@ class UnsupportedEngineTypeError(TypeError, FancyError):
 
     def __init__(self) -> None:
         super().__init__("Unsupported engine type provided to the decorator")
+
+
+class AtomicInsideNonAtomicError(FancyError):
+    """Error raised when atomic() is called inside a non_atomic() context."""
+
+    def __init__(self) -> None:
+        super().__init__("atomic() cannot be called inside a non_atomic() context")
