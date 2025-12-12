@@ -1,6 +1,6 @@
 [project]
 name = 'sqla-fancy-core'
-version = '4.0.0'
+version = '5.0.0'
 description = 'A collection of type-safe, async friendly, and un-opinionated enhancements to SQLAlchemy Core that works well with mordern web servers.'
 readme = 'README.md'
 requires-python = ">=3.10"
@@ -34,7 +34,11 @@ classifiers = [
 dependencies = ["sqlalchemy>=2.0.0,<3.0.0"]
 
 [project.optional-dependencies]
-test = [
+dev = [
+  "hatchling",
+  "twine",
+  "build",
+  "ipython",
   "pytest",
   "pytest-asyncio",
   "flake8",
@@ -47,7 +51,6 @@ test = [
   "asyncpg",
   "psycopg2-binary",
 ]
-dev = ["hatchling", "twine", "build", "ipython"]
 
 [project.urls]
 "Homepage" = "https://github.com/sayanarijit/sqla-fancy-core"

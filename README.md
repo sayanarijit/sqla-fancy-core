@@ -60,7 +60,7 @@ class Book:
         )
     )
 
-    Table = tb(sa.Table("book", sa.MetaData()))
+    Table = tb("book")
 ```
 
 Create tables:
