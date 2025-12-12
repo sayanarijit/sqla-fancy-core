@@ -35,7 +35,7 @@ class Author:
     Table = tb("author")
 ```
 
-For complex scenarios, define columns explicitly:
+For complex scenarios, define columns and constraints explicitly:
 
 ```python
 class Book:
@@ -60,7 +60,19 @@ class Book:
         )
     )
 
+    # Option 1: Define multi-column constraints inside the class
+    ux_author_title = tb(sa.UniqueConstraint(author_id, title))
+
     Table = tb("book")
+
+
+# Option 2: Define multi-column constraints when building the table
+class BookAlt:
+    id = tb(sa.Column("id", sa.Integer, primary_key=True, autoincrement=True))
+    title = tb(sa.Column("title", sa.String(255), nullable=False))
+    author_id = tb(sa.Column("author_id", sa.Integer, sa.ForeignKey(Author.id)))
+
+    Table = tb("book_alt", sa.UniqueConstraint(author_id, title))
 ```
 
 Create tables:

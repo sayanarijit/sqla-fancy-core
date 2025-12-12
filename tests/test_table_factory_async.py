@@ -42,7 +42,7 @@ async def test_table_builder_async():
             )
         )
 
-        Table = tb(sa.Table("book", sa.MetaData()))
+        Table = tb("book")
 
     # Create the engine
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

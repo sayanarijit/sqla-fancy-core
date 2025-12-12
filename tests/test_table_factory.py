@@ -37,7 +37,7 @@ def test_table_builder():
             )
         )
 
-        Table = tb(sa.Table("book", sa.MetaData()))
+        Table = tb("book")
 
     # Create the engine
     engine = sa.create_engine("sqlite:///:memory:")

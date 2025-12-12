@@ -1,15 +1,9 @@
 """Some builders for fun times with SQLAlchemy core."""
 
-from typing import TYPE_CHECKING, Optional, TypeVar, Union, overload
+from typing import Optional, TypeVar, Union, overload
 
 import sqlalchemy as sa
 from sqlalchemy.schema import SchemaItem
-
-if TYPE_CHECKING:
-    try:
-        from enum import EnumType
-    except ImportError:
-        EnumType = type
 
 T = TypeVar("T", bound=SchemaItem)
 
@@ -83,7 +77,7 @@ class TableBuilder:
     def foreign_key(self, name: str, ref: Union[str, sa.Column], *args, **kwargs):
         return self.col(name, sa.ForeignKey(ref), *args, **kwargs)
 
-    def enum(self, name: str, enum: EnumType | sa.Enum, *args, **kwargs) -> sa.Column:
+    def enum(self, name: str, enum, *args, **kwargs) -> sa.Column:
         return self.col(
             name, enum if isinstance(enum, sa.Enum) else sa.Enum(enum), *args, **kwargs
         )
@@ -130,9 +124,7 @@ class TableBuilder:
     def array_boolean(self, name: str, *args, **kwargs) -> sa.Column:
         return self.array(name, sa.Boolean, *args, **kwargs)
 
-    def array_enum(
-        self, name: str, enum: EnumType | sa.Enum, *args, **kwargs
-    ) -> sa.Column:
+    def array_enum(self, name: str, enum, *args, **kwargs) -> sa.Column:
         return self.array(
             name, enum if isinstance(enum, sa.Enum) else sa.Enum(enum), *args, **kwargs
         )
