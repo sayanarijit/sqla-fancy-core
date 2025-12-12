@@ -205,14 +205,14 @@ def test_ax_works_after_nested_atomic_with_same_connection(fancy_engine):
     with fancy_engine.atomic() as conn1:
         fancy_engine.ax(q_insert)
         assert conn1.in_transaction() is True
-        
+
         with fancy_engine.atomic() as conn2:
             # Same connection should be reused
             assert conn1 is conn2
             assert conn2.in_transaction() is True
             fancy_engine.ax(q_insert)
             assert fancy_engine.ax(q_count).scalar_one() == 2
-        
+
         # Still in transaction after nested context
         assert conn1.in_transaction() is True
         fancy_engine.ax(q_insert)

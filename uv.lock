@@ -1256,7 +1256,7 @@ wheels = [
 
 [[package]]
 name = "sqla-fancy-core"
-version = "4.0.0"
+version = "5.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "sqlalchemy" },
@@ -1264,46 +1264,44 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "build" },
-    { name = "hatchling" },
-    { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "ipython", version = "9.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "twine" },
-]
-test = [
     { name = "aiosqlite" },
     { name = "asyncpg" },
+    { name = "build" },
     { name = "fastapi" },
     { name = "flake8" },
+    { name = "hatchling" },
     { name = "httpx" },
+    { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "ipython", version = "9.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "psycopg2-binary" },
     { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "python-multipart" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "twine" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "aiosqlite", marker = "extra == 'test'" },
-    { name = "asyncpg", marker = "extra == 'test'" },
+    { name = "aiosqlite", marker = "extra == 'dev'" },
+    { name = "asyncpg", marker = "extra == 'dev'" },
     { name = "build", marker = "extra == 'dev'" },
-    { name = "fastapi", marker = "extra == 'test'" },
-    { name = "flake8", marker = "extra == 'test'" },
+    { name = "fastapi", marker = "extra == 'dev'" },
+    { name = "flake8", marker = "extra == 'dev'" },
     { name = "hatchling", marker = "extra == 'dev'" },
-    { name = "httpx", marker = "extra == 'test'" },
+    { name = "httpx", marker = "extra == 'dev'" },
     { name = "ipython", marker = "extra == 'dev'" },
-    { name = "psycopg2-binary", marker = "extra == 'test'" },
-    { name = "pydantic", marker = "extra == 'test'" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-asyncio", marker = "extra == 'test'" },
-    { name = "python-multipart", marker = "extra == 'test'" },
+    { name = "psycopg2-binary", marker = "extra == 'dev'" },
+    { name = "pydantic", marker = "extra == 'dev'" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'" },
+    { name = "python-multipart", marker = "extra == 'dev'" },
     { name = "sqlalchemy", specifier = ">=2.0.0,<3.0.0" },
-    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'test'" },
+    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'dev'" },
     { name = "twine", marker = "extra == 'dev'" },
 ]
-provides-extras = ["test", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "sqlalchemy"

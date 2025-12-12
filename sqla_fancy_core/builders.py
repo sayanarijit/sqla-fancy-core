@@ -1,8 +1,11 @@
 """Some builders for fun times with SQLAlchemy core."""
 
-from typing import Optional, Union, overload
+from typing import Optional, TypeVar, Union, overload
 
 import sqlalchemy as sa
+from sqlalchemy.schema import SchemaItem
+
+T = TypeVar("T", bound=SchemaItem)
 
 
 class TableBuilder:
@@ -14,7 +17,7 @@ class TableBuilder:
             self.metadata = sa.MetaData()
         else:
             self.metadata = metadata
-        self.c = []
+        self.schema_items = []
 
     def col(self, *args, **kwargs) -> sa.Column:
         col = sa.Column(*args, **kwargs)
@@ -74,8 +77,10 @@ class TableBuilder:
     def foreign_key(self, name: str, ref: Union[str, sa.Column], *args, **kwargs):
         return self.col(name, sa.ForeignKey(ref), *args, **kwargs)
 
-    def enum(self, name: str, enum: type, *args, **kwargs) -> sa.Column:
-        return self.col(name, sa.Enum(enum), *args, **kwargs)
+    def enum(self, name: str, enum, *args, **kwargs) -> sa.Column:
+        return self.col(
+            name, enum if isinstance(enum, sa.Enum) else sa.Enum(enum), *args, **kwargs
+        )
 
     def json(self, name: str, *args, **kwargs) -> sa.Column:
         return self.col(name, sa.JSON, *args, **kwargs)
@@ -119,8 +124,10 @@ class TableBuilder:
     def array_boolean(self, name: str, *args, **kwargs) -> sa.Column:
         return self.array(name, sa.Boolean, *args, **kwargs)
 
-    def array_enum(self, name: str, enum: type, *args, **kwargs) -> sa.Column:
-        return self.array(name, sa.Enum(enum), *args, **kwargs)
+    def array_enum(self, name: str, enum, *args, **kwargs) -> sa.Column:
+        return self.array(
+            name, enum if isinstance(enum, sa.Enum) else sa.Enum(enum), *args, **kwargs
+        )
 
     def auto_id(self, name="id", *args, **kwargs) -> sa.Column:
         return self.integer(
@@ -136,21 +143,33 @@ class TableBuilder:
         return self.datetime(name, default=sa.func.now(), *args, **kwargs)
 
     @overload
-    def __call__(self, arg1: str, *args, **kwargs) -> sa.Table: ...
+    def __call__(self, arg1: str, *args: SchemaItem, **kwargs) -> sa.Table: ...
     @overload
-    def __call__(self, arg1: sa.Column, *args, **kwargs) -> sa.Column: ...
-    @overload
-    def __call__(self, arg1: sa.Table, *args, **kwargs) -> sa.Table: ...
+    def __call__(self, arg1: T, *args, **kwargs) -> T: ...
     def __call__(self, arg1, *args, **kwargs):
-        if isinstance(arg1, sa.Column):
+        if isinstance(arg1, SchemaItem):
             arg1.info["args"] = args
             arg1.info["kwargs"] = kwargs
-            self.c.append(arg1)
+            self.schema_items.append(arg1)
             return arg1
-        elif isinstance(arg1, Union[str, sa.Table]):
-            cols = self.c
-            tablename = arg1.name if isinstance(arg1, sa.Table) else arg1
-            self.c = []
-            return sa.Table(tablename, self.metadata, *args, *cols, **kwargs)
+        # Supports sa.Table for legacy compatibility
+        elif isinstance(arg1, str | sa.Table):
+            cols = self.schema_items
+            self.schema_items = []
+            return (
+                sa.Table(arg1, self.metadata, *args, *cols, **kwargs)
+                if isinstance(arg1, str)
+                else sa.Table(
+                    arg1.name,
+                    self.metadata,
+                    *cols,
+                    *arg1.constraints,
+                    *arg1.indexes,
+                    schema=kwargs.pop("schema", arg1.schema),
+                    **kwargs,
+                )
+            )
         else:
-            raise TypeError(f"Expected a string or Column, got {type(arg1).__name__}")
+            raise TypeError(
+                f"Expected a str or Column or Constraint as first argument, got {type(arg1).__name__}"
+            )

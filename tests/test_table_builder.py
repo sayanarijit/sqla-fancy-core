@@ -37,7 +37,7 @@ def test_table_builder():
             )
         )
 
-        Table = tb(sa.Table("book", sa.MetaData()))
+        Table = tb("book")
 
     # Create the engine
     engine = sa.create_engine("sqlite:///:memory:")
@@ -72,3 +72,42 @@ def test_table_builder():
         )
         result = txn.execute(qry).all()
         assert result == [("John Doe", "My Book")], result
+
+
+def test_table_builder_multi_column_unique_constraints():
+    import sqlalchemy as sa
+
+    from sqla_fancy_core import TableBuilder
+
+    tb = TableBuilder()
+
+    # Option 1: constraint defined inside the class using tb(sa.UniqueConstraint(...))
+    class User:
+        classroom = tb.integer("classroom")
+        roll_no = tb.integer("roll_no")
+
+        ux_classroom_roll_no = tb(sa.UniqueConstraint(classroom, roll_no))
+
+        Table = tb("users")
+
+    # Option 2: constraint passed when building the table
+    class UserAlt:
+        classroom = tb.integer("classroom")
+        roll_no = tb.integer("roll_no")
+
+        Table = tb("users_alt", sa.UniqueConstraint(classroom, roll_no))
+
+    engine = sa.create_engine("sqlite:///:memory:")
+    tb.metadata.create_all(engine)
+
+    insp = sa.inspect(engine)
+
+    # Validate Option 1
+    constraints = insp.get_unique_constraints(User.Table.name)
+    cols_sets = {tuple(c["column_names"]) for c in constraints}
+    assert ("classroom", "roll_no") in cols_sets or ("roll_no", "classroom") in cols_sets
+
+    # Validate Option 2
+    constraints_alt = insp.get_unique_constraints(UserAlt.Table.name)
+    cols_sets_alt = {tuple(c["column_names"]) for c in constraints_alt}
+    assert ("classroom", "roll_no") in cols_sets_alt or ("roll_no", "classroom") in cols_sets_alt

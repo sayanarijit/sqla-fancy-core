@@ -42,7 +42,7 @@ async def test_table_builder_async():
             )
         )
 
-        Table = tb(sa.Table("book", sa.MetaData()))
+        Table = tb("book")
 
     # Create the engine
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -78,3 +78,50 @@ async def test_table_builder_async():
         )
         result = (await txn.execute(qry)).all()
         assert result == [("John Doe", "My Book")], result
+
+
+@pytest.mark.asyncio
+async def test_table_builder_async_multi_column_unique_constraints():
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from sqla_fancy_core import TableBuilder
+
+    tb = TableBuilder()
+
+    # Option 1: constraint defined inside the class using tb(sa.UniqueConstraint(...))
+    class User:
+        classroom = tb.integer("classroom")
+        roll_no = tb.integer("roll_no")
+
+        ux_classroom_roll_no = tb(sa.UniqueConstraint(classroom, roll_no))
+
+        Table = tb("users_async")
+
+    # Option 2: constraint passed when building the table
+    class UserAlt:
+        classroom = tb.integer("classroom")
+        roll_no = tb.integer("roll_no")
+
+        Table = tb("users_async_alt", sa.UniqueConstraint(classroom, roll_no))
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    async with engine.begin() as conn:
+        await conn.run_sync(tb.metadata.create_all)
+
+    def _check(conn):
+        insp = sa.inspect(conn)
+
+        # Validate Option 1
+        constraints = insp.get_unique_constraints(User.Table.name)
+        cols_sets = {tuple(c["column_names"]) for c in constraints}
+        assert ("classroom", "roll_no") in cols_sets or ("roll_no", "classroom") in cols_sets
+
+        # Validate Option 2
+        constraints_alt = insp.get_unique_constraints(UserAlt.Table.name)
+        cols_sets_alt = {tuple(c["column_names"]) for c in constraints_alt}
+        assert ("classroom", "roll_no") in cols_sets_alt or ("roll_no", "classroom") in cols_sets_alt
+
+    async with engine.begin() as conn:
+        await conn.run_sync(_check)
