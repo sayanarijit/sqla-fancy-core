@@ -309,27 +309,27 @@ Use `@connect` for read-only operations. Use `@transact` for writes.
 
 ```python
 import sqlalchemy as sa
-from sqla_fancy_core import Inject, connect, transact
+from sqla_fancy_core import Inject, connect, transact, TableBuilder
+
+tb = TableBuilder()
+
+class User:
+    id = tb.auto_id()
+    name = tb.string("name")
+    Table = tb("users")
 
 engine = sa.create_engine("sqlite:///:memory:")
-metadata = sa.MetaData()
-users = sa.Table(
-    "users",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("name", sa.String),
-)
-metadata.create_all(engine)
+tb.metadata.create_all(engine)
 
 @connect
 def get_user_count(conn=Inject(engine)):
-    return conn.execute(sa.select(sa.func.count()).select_from(users)).scalar_one()
+    return conn.execute(sa.select(sa.func.count()).select_from(User.Table)).scalar_one()
 
 assert get_user_count() == 0
 
 @transact
 def create_user(name: str, conn=Inject(engine)):
-    conn.execute(sa.insert(users).values(name=name))
+    conn.execute(sa.insert(User.Table).values({User.name: name}))
 
 # Without an explicit transaction
 create_user("alice")
@@ -346,28 +346,27 @@ with engine.begin() as txn:
 ```python
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
-from sqla_fancy_core import Inject, connect, transact
+from sqla_fancy_core import Inject, connect, transact, TableBuilder
+
+tb = TableBuilder()
+
+class User:
+    id = tb.auto_id()
+    name = tb.string("name")
+    Table = tb("users")
 
 engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-metadata = sa.MetaData()
-users = sa.Table(
-    "users",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("name", sa.String),
-)
-
 async with engine.begin() as conn:
-    await conn.run_sync(metadata.create_all)
+    await conn.run_sync(tb.metadata.create_all)
 
 @connect
 async def get_user_count(conn=Inject(engine)):
-    result = await conn.execute(sa.select(sa.func.count()).select_from(users))
+    result = await conn.execute(sa.select(sa.func.count()).select_from(User.Table))
     return result.scalar_one()
 
 @transact
 async def create_user(name: str, conn=Inject(engine)):
-    await conn.execute(sa.insert(users).values(name=name))
+    await conn.execute(sa.insert(User.Table).values({User.name: name}))
 
 # Without an explicit transaction
 assert await get_user_count() == 0
@@ -399,7 +398,7 @@ def create_user(
     name: Annotated[str, Form(...)],
     conn: Annotated[sa.Connection, Depends(get_transaction)] = Inject(engine),
 ):
-    conn.execute(sa.insert(users).values(name=name))
+    conn.execute(sa.insert(User.Table).values({User.name: name}))
 
 # Register route
 app.post("/create-user")(create_user)
@@ -429,7 +428,7 @@ async def create_user(
     name: Annotated[str, Form(...)],
     conn: Annotated[AsyncConnection, Depends(get_transaction)] = Inject(engine),
 ):
-    await conn.execute(sa.insert(users).values(name=name))
+    await conn.execute(sa.insert(User.Table).values({User.name: name}))
 
 # Works outside FastAPI too — starts its own transaction
 await create_user(name="outside fastapi")
